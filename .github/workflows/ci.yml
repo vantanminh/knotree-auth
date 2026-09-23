@@ -84,8 +84,11 @@ jobs:
         run: npm ci
       - working-directory: frontend
         run: npx playwright install --with-deps chromium
-      - name: API
+      - name: Build API
         working-directory: backend
+        run: cargo build --quiet
+      - name: Playwright
+        working-directory: frontend
         env:
           DATABASE_URL: postgres://knotree:knotree@127.0.0.1:5432/knotree_accounts
           APP_ENV: development
@@ -97,13 +100,21 @@ jobs:
           ARGON2_MEMORY_KIB: "8192"
           ARGON2_ITERATIONS: "1"
           ARGON2_PARALLELISM: "1"
-        run: cargo run --quiet &
-      - name: Wait for API
         run: |
-          for i in $(seq 1 60); do
-            curl -fsS http://127.0.0.1:8080/ready && exit 0
-            sleep 2
+          ../backend/target/debug/knotree-accounts > /tmp/knotree-api.log 2>&1 &
+          echo $! > /tmp/knotree-api.pid
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/ready; then
+              npm run e2e
+              exit $?
+            fi
+            if ! kill -0 "$(cat /tmp/knotree-api.pid)" 2>/dev/null; then
+              echo "API exited before it was ready"
+              cat /tmp/knotree-api.log
+              exit 1
+            fi
+            sleep 1
           done
+          echo "API did not become ready"
+          cat /tmp/knotree-api.log
           exit 1
-      - working-directory: frontend
-        run: npm run e2e
