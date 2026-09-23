@@ -25,5 +25,6 @@ test("a new account can verify email and sign in", async ({ page, request }) => 
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByText(email)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Account" })).toBeVisible();
+  await expect(page.getByText(email, { exact: true })).toBeVisible();
 });
