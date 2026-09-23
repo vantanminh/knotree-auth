@@ -1,0 +1,136 @@
+openapi: 3.0.3
+info:
+  title: Knotree Accounts API
+  version: 0.1.0
+servers:
+  - url: https://accounts.knotree.com
+paths:
+  /api/v1/auth/register:
+    post:
+      summary: Create an account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, password_confirm]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                password_confirm: { type: string }
+      responses:
+        "200":
+          description: Account created and verification email queued
+        "409":
+          description: Email already registered
+  /api/v1/auth/login:
+    post:
+      summary: Password login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Authenticated, or MFA required
+        "401":
+          description: Generic invalid credentials
+  /api/v1/auth/mfa/verify:
+    post:
+      summary: Complete a login transaction with TOTP, email OTP, or a recovery code
+      responses:
+        "200":
+          description: Session cookie set
+  /api/v1/auth/logout:
+    post:
+      summary: Revoke the current session
+      responses:
+        "200": { description: Signed out }
+  /api/v1/me:
+    get:
+      summary: Current profile
+      responses:
+        "200": { description: Profile without secrets }
+        "401": { description: No session }
+  /api/v1/admin/stats:
+    get:
+      summary: Super-admin overview
+      responses:
+        "200": { description: Aggregate counts }
+        "403": { description: Not an admin, or authenticator is not enabled }
+  /oauth/authorize:
+    get:
+      summary: OAuth 2.1 authorization endpoint
+      parameters:
+        - in: query
+          name: client_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: redirect_uri
+          required: true
+          schema: { type: string }
+        - in: query
+          name: response_type
+          required: true
+          schema: { type: string, enum: [code] }
+        - in: query
+          name: code_challenge
+          required: true
+          schema: { type: string }
+        - in: query
+          name: code_challenge_method
+          required: true
+          schema: { type: string, enum: [S256] }
+        - in: query
+          name: state
+          required: true
+          schema: { type: string }
+      responses:
+        "302": { description: Redirect to the client or to sign-in }
+        "400": { description: Invalid client or redirect URI }
+  /oauth/token:
+    post:
+      summary: Token endpoint
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                grant_type: { type: string }
+                code: { type: string }
+                redirect_uri: { type: string }
+                client_id: { type: string }
+                code_verifier: { type: string }
+                refresh_token: { type: string }
+      responses:
+        "200": { description: Tokens issued }
+        "400": { description: Invalid grant }
+  /.well-known/openid-configuration:
+    get:
+      summary: OpenID Provider metadata
+      responses:
+        "200": { description: Discovery document }
+  /.well-known/jwks.json:
+    get:
+      summary: Signing keys
+      responses:
+        "200": { description: JSON Web Key Set }
+components:
+  securitySchemes:
+    browserSession:
+      type: apiKey
+      in: cookie
+      name: knotree_session
+    bearer:
+      type: http
+      scheme: bearer

@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knotree-accounts
+  labels:
+    app: knotree-accounts
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: knotree-accounts
+  template:
+    metadata:
+      labels:
+        app: knotree-accounts
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: knotree-accounts:local
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: knotree-accounts
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: knotree-accounts
+spec:
+  selector:
+    app: knotree-accounts
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
