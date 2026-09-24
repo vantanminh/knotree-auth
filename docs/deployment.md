@@ -104,9 +104,18 @@ artifact is built on the k3s node.
 Before using production email, onboard `knotree.com` under Cloudflare
 **Compute > Email Service > Email Sending**. Review the SPF, DKIM, DMARC, and
 `cf-bounce` MX records Cloudflare proposes, then confirm the domain is enabled
-for sending. The sender is `Knotree Accounts <accounts@knotree.com>`. The Worker is deployed only
-after the API route and API DNS record are ready. Once the Worker deployment
-completes, run
+for sending. Confirm the sending records are visible in public DNS:
+
+```sh
+dig MX cf-bounce.knotree.com
+dig TXT cf-bounce.knotree.com
+dig TXT cf-bounce._domainkey.knotree.com
+```
+
+The root domain SPF and DMARC records alone do not confirm Email Sending setup.
+The sender is `Knotree Accounts <accounts@knotree.com>`. The Worker is deployed
+only after the API route and API DNS record are ready. Once the Worker
+deployment completes, run
 `./deploy/k8s/verify-public.sh` from an environment with network access to
 confirm that both hostnames return healthy API responses over HTTPS.
 
