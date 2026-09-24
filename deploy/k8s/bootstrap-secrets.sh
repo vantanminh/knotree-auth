@@ -4,7 +4,8 @@ umask 077
 
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 namespace=knotree-accounts
-resend_file="${RESEND_API_KEY_FILE:-}"
+cloudflare_token_file="${CLOUDFLARE_EMAIL_API_TOKEN_FILE:-}"
+cloudflare_account_id="${CLOUDFLARE_ACCOUNT_ID:-}"
 private_dir="${PRIVATE_KEY_DIR:-/root/knotree-accounts-private}"
 
 fail() {
@@ -22,14 +23,16 @@ grep -qx 'Encryption Status: Enabled' <<< "$encryption_status" || \
 grep -qx 'Current Rotation Stage: reencrypt_finished' <<< "$encryption_status" || \
   fail 'Finish k3s secret encryption before creating production application secrets.'
 
-[[ -n "$resend_file" && -f "$resend_file" && ! -L "$resend_file" ]] || \
-  fail 'Set RESEND_API_KEY_FILE to a protected file containing the Resend production API key.'
-mode="$(stat -c '%a' -- "$resend_file")"
+[[ "$cloudflare_account_id" =~ ^[A-Fa-f0-9]{32}$ ]] || \
+  fail 'Set CLOUDFLARE_ACCOUNT_ID to the 32-character Cloudflare account ID.'
+[[ -n "$cloudflare_token_file" && -f "$cloudflare_token_file" && ! -L "$cloudflare_token_file" ]] || \
+  fail 'Set CLOUDFLARE_EMAIL_API_TOKEN_FILE to a protected file containing the Email Sending API token.'
+mode="$(stat -c '%a' -- "$cloudflare_token_file")"
 [[ "$mode" == 400 || "$mode" == 600 ]] || \
-  fail 'The Resend API key file must have mode 400 or 600.'
-resend_key="$(cat -- "$resend_file")"
-[[ -n "$resend_key" && "$resend_key" != *$'\n'* && "$resend_key" != *[[:space:]]* ]] || \
-  fail 'The Resend API key file must contain one non-empty token with no whitespace.'
+  fail 'The Cloudflare Email API token file must have mode 400 or 600.'
+cloudflare_email_api_token="$(cat -- "$cloudflare_token_file")"
+[[ -n "$cloudflare_email_api_token" && "$cloudflare_email_api_token" != *$'\n'* && "$cloudflare_email_api_token" != *[[:space:]]* ]] || \
+  fail 'The Cloudflare Email API token file must contain one non-empty token with no whitespace.'
 
 kube() {
   k3s kubectl "$@"
@@ -62,8 +65,9 @@ printf 'postgresql://knotree_accounts:%s@postgres.knotree-accounts.svc.cluster.l
   "$postgres_password" > "$tmp/database-url"
 printf '1:%s' "$totp_material" > "$tmp/totp-keys"
 printf '%s' "$metrics_token" > "$tmp/metrics-token"
-printf '%s' "$resend_key" > "$tmp/resend-api-key"
-unset postgres_password totp_material metrics_token resend_key
+printf '%s' "$cloudflare_account_id" > "$tmp/cloudflare-account-id"
+printf '%s' "$cloudflare_email_api_token" > "$tmp/cloudflare-email-api-token"
+unset postgres_password totp_material metrics_token cloudflare_account_id cloudflare_email_api_token
 
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$tmp/jwt-private.pem" >/dev/null 2>&1
 openssl req -x509 -newkey rsa:3072 -nodes -days 3650 -sha256 \
@@ -102,7 +106,8 @@ kube create secret generic knotree-accounts-runtime -n "$namespace" \
   --from-file=DATABASE_URL="$tmp/database-url" \
   --from-file=JWT_PRIVATE_KEY_PEM="$tmp/jwt-private.pem" \
   --from-file=TOTP_ENCRYPTION_KEYS="$tmp/totp-keys" \
-  --from-file=RESEND_API_KEY="$tmp/resend-api-key" \
+  --from-file=CLOUDFLARE_ACCOUNT_ID="$tmp/cloudflare-account-id" \
+  --from-file=CLOUDFLARE_EMAIL_API_TOKEN="$tmp/cloudflare-email-api-token" \
   --from-file=METRICS_TOKEN="$tmp/metrics-token" >/dev/null
 
 printf 'Created production secrets in namespace %s. Secret values were not displayed.\n' "$namespace"

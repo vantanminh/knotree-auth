@@ -1,6 +1,6 @@
 # Environment
 
-See `.env.example`. Startup fails when production is missing HTTPS, secure cookies, the JWT key, TOTP keys, or a Resend key while that provider is selected. `DEV_MAILBOX=true` is rejected in production and staging.
+See `.env.example`. Startup fails when production is missing HTTPS, secure cookies, the JWT key, TOTP keys, or the Cloudflare account ID and Email Sending API token while `EMAIL_PROVIDER=cloudflare`. `DEV_MAILBOX=true` is rejected in production and staging.
 
 `SUPER_ADMIN_USER_ID` is the production lock for the single admin. `SUPER_ADMIN_EMAIL` is a development convenience only.
 

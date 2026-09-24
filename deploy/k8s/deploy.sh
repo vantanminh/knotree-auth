@@ -46,7 +46,7 @@ if missing:
 
 # The namespace and secrets are provisioned explicitly by the bootstrap scripts.
 kube get namespace "$namespace" >/dev/null
-check_secret knotree-accounts-runtime POSTGRES_PASSWORD DATABASE_URL JWT_PRIVATE_KEY_PEM TOTP_ENCRYPTION_KEYS RESEND_API_KEY METRICS_TOKEN
+check_secret knotree-accounts-runtime POSTGRES_PASSWORD DATABASE_URL JWT_PRIVATE_KEY_PEM TOTP_ENCRYPTION_KEYS CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_EMAIL_API_TOKEN METRICS_TOKEN
 check_secret postgres-ca ca.crt
 check_secret postgres-server-tls ca.crt tls.crt tls.key
 check_secret registry-credentials .dockerconfigjson

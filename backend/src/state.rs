@@ -1,5 +1,5 @@
 use crate::config::AppConfig;
-use crate::email::{EmailProvider, OutboxProvider, ResendProvider};
+use crate::email::{CloudflareEmailProvider, EmailProvider, OutboxProvider};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -42,18 +42,21 @@ pub async fn connect(config: AppConfig) -> Result<AppState, crate::error::AppErr
         .build()
         .map_err(crate::error::AppError::internal)?;
 
-    let email: Arc<dyn EmailProvider> = if config.email_provider == "resend" {
-        if let Some(key) = config.resend_api_key.clone() {
-            Arc::new(ResendProvider::new(
-                key,
+    let email: Arc<dyn EmailProvider> = match (
+        config.email_provider.as_str(),
+        config.cloudflare_account_id.clone(),
+        config.cloudflare_email_api_token.clone(),
+    ) {
+        ("cloudflare", Some(account_id), Some(api_token)) => {
+            Arc::new(CloudflareEmailProvider::new(
+                account_id,
+                api_token,
                 config.email_from.clone(),
+                config.email_from_name.clone(),
                 http.clone(),
             ))
-        } else {
-            Arc::new(OutboxProvider)
         }
-    } else {
-        Arc::new(OutboxProvider)
+        _ => Arc::new(OutboxProvider),
     };
 
     Ok(AppState {

@@ -27,57 +27,112 @@ impl EmailProvider for OutboxProvider {
     }
 }
 
-pub struct ResendProvider {
-    api_key: String,
+pub struct CloudflareEmailProvider {
+    account_id: String,
+    api_token: String,
     from: String,
+    from_name: Option<String>,
     http: reqwest::Client,
 }
 
-impl ResendProvider {
-    pub fn new(api_key: String, from: String, http: reqwest::Client) -> Self {
+impl CloudflareEmailProvider {
+    pub fn new(
+        account_id: String,
+        api_token: String,
+        from: String,
+        from_name: Option<String>,
+        http: reqwest::Client,
+    ) -> Self {
         Self {
-            api_key,
+            account_id,
+            api_token,
             from,
+            from_name,
             http,
         }
     }
 }
 
 #[derive(Deserialize)]
-struct ResendResponse {
-    id: Option<String>,
+struct CloudflareSendResponse {
+    success: bool,
+    result: Option<CloudflareSendResult>,
+}
+
+#[derive(Default, Deserialize)]
+struct CloudflareSendResult {
+    message_id: Option<String>,
+    #[serde(default)]
+    delivered: Vec<String>,
+    #[serde(default)]
+    queued: Vec<String>,
+    #[serde(default)]
+    permanent_bounces: Vec<String>,
 }
 
 #[async_trait]
-impl EmailProvider for ResendProvider {
+impl EmailProvider for CloudflareEmailProvider {
     fn name(&self) -> &'static str {
-        "resend"
+        "cloudflare"
     }
 
     async fn deliver(&self, message: &RenderedEmail, to: &str) -> AppResult<Option<String>> {
+        let from = match &self.from_name {
+            Some(name) => serde_json::json!({ "address": self.from, "name": name }),
+            None => serde_json::json!(self.from),
+        };
         let response = self
             .http
-            .post("https://api.resend.com/emails")
-            .bearer_auth(&self.api_key)
+            .post(format!(
+                "https://api.cloudflare.com/client/v4/accounts/{}/email/sending/send",
+                self.account_id
+            ))
+            .bearer_auth(&self.api_token)
             .json(&serde_json::json!({
-                "from": self.from,
-                "to": [to],
+                "from": from,
+                "to": to,
                 "subject": message.subject,
                 "html": message.html,
                 "text": message.text,
             }))
             .send()
             .await
-            .map_err(AppError::internal)?;
+            .map_err(|err| {
+                tracing::error!(error = %err, "email provider request failed");
+                AppError::EmailDelivery
+            })?;
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
             tracing::error!(status = %status, "email provider rejected message");
-            let _ = body;
             return Err(AppError::EmailDelivery);
         }
-        let parsed: ResendResponse = response.json().await.map_err(AppError::internal)?;
-        Ok(parsed.id)
+        let parsed: CloudflareSendResponse = response.json().await.map_err(|_| {
+            tracing::error!(status = %status, "email provider returned an invalid response");
+            AppError::EmailDelivery
+        })?;
+        let Some(result) = parsed.result.filter(|_| parsed.success) else {
+            tracing::error!(status = %status, "email provider did not accept message");
+            return Err(AppError::EmailDelivery);
+        };
+        let accepted = result
+            .delivered
+            .iter()
+            .chain(result.queued.iter())
+            .any(|recipient| recipient.eq_ignore_ascii_case(to));
+        if accepted {
+            return Ok(result.message_id);
+        }
+
+        if result
+            .permanent_bounces
+            .iter()
+            .any(|recipient| recipient.eq_ignore_ascii_case(to))
+        {
+            tracing::error!(status = %status, "email provider reported a permanent bounce");
+        } else {
+            tracing::error!(status = %status, "email provider did not accept recipient");
+        }
+        Err(AppError::EmailDelivery)
     }
 }
 

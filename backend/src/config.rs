@@ -62,8 +62,10 @@ pub struct AppConfig {
     pub jwt_keys: Vec<JwtKey>,
     pub active_kid: String,
     pub email_from: String,
+    pub email_from_name: Option<String>,
     pub email_provider: String,
-    pub resend_api_key: Option<String>,
+    pub cloudflare_account_id: Option<String>,
+    pub cloudflare_email_api_token: Option<String>,
     pub dev_mailbox: bool,
     pub google_client_id: Option<String>,
     pub google_client_secret: Option<String>,
@@ -137,15 +139,43 @@ pub fn from_env() -> AppResult<AppConfig> {
     let (jwt_keys, active_kid) = load_jwt_keys(environment)?;
     let email_provider = env_or(
         "EMAIL_PROVIDER",
-        if dev_mailbox { "outbox" } else { "resend" },
+        if dev_mailbox { "outbox" } else { "cloudflare" },
     );
-    let resend_api_key = env::var("RESEND_API_KEY").ok().filter(|v| !v.is_empty());
-    if email_provider == "resend" && resend_api_key.is_none() && environment.is_production() {
+    if !matches!(email_provider.as_str(), "outbox" | "cloudflare") {
         return Err(AppError::internal(
-            "RESEND_API_KEY is required when EMAIL_PROVIDER=resend",
+            "EMAIL_PROVIDER must be outbox or cloudflare",
         ));
     }
-    let email_from = env_or("EMAIL_FROM", "Knotree Accounts <accounts@knotree.com>");
+    let cloudflare_account_id = env::var("CLOUDFLARE_ACCOUNT_ID")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let cloudflare_email_api_token = env::var("CLOUDFLARE_EMAIL_API_TOKEN")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if email_provider == "cloudflare" {
+        if cloudflare_account_id
+            .as_ref()
+            .is_some_and(|id| id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        {
+            return Err(AppError::internal(
+                "CLOUDFLARE_ACCOUNT_ID must be a 32-character hexadecimal ID",
+            ));
+        }
+        if environment.is_production() && cloudflare_account_id.is_none() {
+            return Err(AppError::internal(
+                "CLOUDFLARE_ACCOUNT_ID is required when EMAIL_PROVIDER=cloudflare",
+            ));
+        }
+        if environment.is_production() && cloudflare_email_api_token.is_none() {
+            return Err(AppError::internal(
+                "CLOUDFLARE_EMAIL_API_TOKEN is required when EMAIL_PROVIDER=cloudflare",
+            ));
+        }
+    }
+    let email_from = env_or("EMAIL_FROM", "accounts@knotree.com");
+    let email_from_name = empty_none("EMAIL_FROM_NAME");
     let super_admin_user_id = match env::var("SUPER_ADMIN_USER_ID") {
         Ok(value) if !value.trim().is_empty() => Some(
             Uuid::parse_str(value.trim())
@@ -181,8 +211,10 @@ pub fn from_env() -> AppResult<AppConfig> {
         jwt_keys,
         active_kid,
         email_from,
+        email_from_name,
         email_provider,
-        resend_api_key,
+        cloudflare_account_id,
+        cloudflare_email_api_token,
         dev_mailbox,
         google_client_id: empty_none("GOOGLE_CLIENT_ID"),
         google_client_secret: empty_none("GOOGLE_CLIENT_SECRET"),

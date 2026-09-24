@@ -12,8 +12,9 @@ data:
   BIND_ADDR: 0.0.0.0:8080
   COOKIE_SECURE: "true"
   DEV_MAILBOX: "false"
-  EMAIL_PROVIDER: resend
-  EMAIL_FROM: "Knotree Accounts <accounts@knotree.com>"
+  EMAIL_PROVIDER: cloudflare
+  EMAIL_FROM: accounts@knotree.com
+  EMAIL_FROM_NAME: "Knotree Accounts"
   CORS_ORIGINS: https://accounts.knotree.com
   TRUST_PROXY: "true"
   ARGON2_MEMORY_KIB: "65536"

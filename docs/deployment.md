@@ -23,13 +23,16 @@ shell history:
 ```sh
 install -d -m 700 /root/knotree-accounts-input
 umask 077
-vi /root/knotree-accounts-input/resend-api-key
+vi /root/knotree-accounts-input/cloudflare-email-api-token
 vi /root/knotree-accounts-input/r2.env
-chmod 600 /root/knotree-accounts-input/resend-api-key /root/knotree-accounts-input/r2.env
+chmod 600 /root/knotree-accounts-input/cloudflare-email-api-token /root/knotree-accounts-input/r2.env
 ```
 
-The Resend file contains only the production API key. `r2.env` contains these
-four lines, with values from a dedicated Cloudflare R2 token and bucket:
+Create a Cloudflare API token with **Email Sending: Edit** access, scoped to
+the account that owns the sender domain. The email token file contains only
+that token. Set `CLOUDFLARE_ACCOUNT_ID` to the account's 32-character ID.
+`r2.env` contains these four lines, with values from a dedicated Cloudflare
+R2 token and bucket:
 
 ```text
 R2_ACCESS_KEY_ID=...
@@ -46,7 +49,8 @@ application uploads.
 Bootstrap the namespace secrets and GHCR pull credentials:
 
 ```sh
-export RESEND_API_KEY_FILE=/root/knotree-accounts-input/resend-api-key
+export CLOUDFLARE_ACCOUNT_ID='<your-32-character-account-id>'
+export CLOUDFLARE_EMAIL_API_TOKEN_FILE=/root/knotree-accounts-input/cloudflare-email-api-token
 export BACKUP_ENV_FILE=/root/knotree-accounts-input/r2.env
 ./deploy/k8s/bootstrap-secrets.sh
 ./deploy/k8s/bootstrap-registry-secret.sh
@@ -97,9 +101,12 @@ Workers Scripts edit access and DNS edit access for the Knotree zone. The
 Worker workflow builds the frontend on GitHub and deploys it; no frontend
 artifact is built on the k3s node.
 
-Before using production email, verify the sender domain in Resend and publish
-its SPF, DKIM, and DMARC records. The Worker is deployed only after the API
-route and API DNS record are ready. Once the Worker deployment completes, run
+Before using production email, onboard `knotree.com` under Cloudflare
+**Compute > Email Service > Email Sending**. Review the SPF, DKIM, DMARC, and
+`cf-bounce` MX records Cloudflare proposes, then confirm the domain is enabled
+for sending. The sender is `Knotree Accounts <accounts@knotree.com>`. The Worker is deployed only
+after the API route and API DNS record are ready. Once the Worker deployment
+completes, run
 `./deploy/k8s/verify-public.sh` from an environment with network access to
 confirm that both hostnames return healthy API responses over HTTPS.
 
