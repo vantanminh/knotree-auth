@@ -1,0 +1,58 @@
+[package]
+name = "knotree-accounts"
+version = "0.1.0"
+edition = "2021"
+license = "UNLICENSED"
+publish = false
+description = "Knotree Authentication — central identity provider"
+
+[features]
+test-util = []
+
+[dependencies]
+aes-gcm = "0.10"
+async-trait = "0.1"
+argon2 = "0.5"
+axum = { version = "0.8", features = ["macros", "form"] }
+axum-extra = { version = "0.10", features = ["cookie"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+data-encoding = "2.6"
+ipnetwork = "0.20"
+jsonwebtoken = "9"
+metrics = "0.24"
+metrics-exporter-prometheus = "0.16"
+qrcode = "0.14"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rsa = { version = "0.9", features = ["pem", "sha2"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "ipnetwork"] }
+subtle = "2"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "limit", "timeout", "trace", "request-id", "util", "set-header"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+cookie = "0.18"
+totp-rs = { version = "5", features = ["otpauth"] }
+url = "2"
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+
+[dev-dependencies]
+base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "cookies"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+totp-rs = { version = "5", features = ["otpauth"] }
+url = "2"
+uuid = { version = "1", features = ["v7"] }
+wiremock = "0.6"
+
+[[test]]
+name = "api"
+path = "tests/api.rs"
+required-features = ["test-util"]

@@ -1,0 +1,120 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: knotree
+          POSTGRES_PASSWORD: knotree
+          POSTGRES_DB: knotree_accounts_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U knotree -d knotree_accounts_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format
+        working-directory: backend
+        run: cargo fmt --all --check
+      - name: Clippy
+        working-directory: backend
+        run: cargo clippy --all-targets --features test-util -- -D warnings
+      - name: Test
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgres://knotree:knotree@127.0.0.1:5432/knotree_accounts_test
+        run: cargo test --features test-util
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci
+      - working-directory: frontend
+        run: npm test
+      - working-directory: frontend
+        run: npm run typecheck
+      - working-directory: frontend
+        run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: knotree
+          POSTGRES_PASSWORD: knotree
+          POSTGRES_DB: knotree_accounts
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U knotree -d knotree_accounts"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci
+      - working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Build API
+        working-directory: backend
+        run: cargo build --quiet
+      - name: Playwright
+        working-directory: frontend
+        env:
+          DATABASE_URL: postgres://knotree:knotree@127.0.0.1:5432/knotree_accounts
+          APP_ENV: development
+          APP_BASE_URL: http://localhost:5173
+          COOKIE_SECURE: "false"
+          DEV_MAILBOX: "true"
+          EMAIL_PROVIDER: outbox
+          BIND_ADDR: 127.0.0.1:8080
+          ARGON2_MEMORY_KIB: "8192"
+          ARGON2_ITERATIONS: "1"
+          ARGON2_PARALLELISM: "1"
+        run: |
+          ../backend/target/debug/knotree-accounts > /tmp/knotree-api.log 2>&1 &
+          echo $! > /tmp/knotree-api.pid
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/ready; then
+              npm run e2e
+              exit $?
+            fi
+            if ! kill -0 "$(cat /tmp/knotree-api.pid)" 2>/dev/null; then
+              echo "API exited before it was ready"
+              cat /tmp/knotree-api.log
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "API did not become ready"
+          cat /tmp/knotree-api.log
+          exit 1

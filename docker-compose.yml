@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: knotree
+      POSTGRES_PASSWORD: knotree
+      POSTGRES_DB: knotree_accounts
+    ports:
+      - "5432:5432"
+    volumes:
+      - knotree_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U knotree -d knotree_accounts"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgres://knotree:knotree@postgres:5432/knotree_accounts
+      BIND_ADDR: 0.0.0.0:8080
+      APP_BASE_URL: http://localhost:5173
+      COOKIE_SECURE: "false"
+      DEV_MAILBOX: "true"
+      EMAIL_PROVIDER: outbox
+      TRUST_PROXY: "false"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  knotree_pg:
