@@ -3,7 +3,7 @@ interface Env {
   API_ORIGIN?: string;
 }
 
-const PROXY_PREFIXES = ["/api/", "/oauth/", "/.well-known/", "/health", "/ready", "/metrics"];
+const PROXY_PREFIXES = ["/api/", "/oauth/", "/.well-known/", "/health", "/ready"];
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

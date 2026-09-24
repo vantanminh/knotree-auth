@@ -7,5 +7,14 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": true
-  }
+  },
+  "vars": {
+    "API_ORIGIN": "https://accounts-api.knotree.com"
+  },
+  "routes": [
+    {
+      "pattern": "accounts.knotree.com",
+      "custom_domain": true
+    }
+  ]
 }

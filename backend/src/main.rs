@@ -21,6 +21,27 @@ async fn main() {
     }
 }
 
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        let mut interrupt =
+            signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
+        let mut terminate =
+            signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+        tokio::select! {
+            _ = interrupt.recv() => {},
+            _ = terminate.recv() => {},
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
 async fn run() -> knotree_accounts::AppResult<()> {
     let config = knotree_accounts::config::from_env()?;
     let bind: SocketAddr = config.bind.parse().map_err(|err| {
@@ -48,7 +69,7 @@ async fn run() -> knotree_accounts::AppResult<()> {
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(async {
-        let _ = tokio::signal::ctrl_c().await;
+        shutdown_signal().await;
         tracing::info!("shutdown signal received");
     })
     .await

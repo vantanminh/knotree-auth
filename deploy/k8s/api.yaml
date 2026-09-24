@@ -1,61 +1,133 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: knotree-accounts
+  namespace: knotree-accounts
+  labels:
+    app.kubernetes.io/name: knotree-accounts
+    app.kubernetes.io/part-of: knotree-accounts
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: knotree-accounts
+  namespace: knotree-accounts
+  labels:
+    app.kubernetes.io/name: knotree-accounts
+    app.kubernetes.io/part-of: knotree-accounts
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: knotree-accounts
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: knotree-accounts
+  namespace: knotree-accounts
   labels:
-    app: knotree-accounts
+    app.kubernetes.io/name: knotree-accounts
+    app.kubernetes.io/part-of: knotree-accounts
 spec:
   replicas: 2
+  revisionHistoryLimit: 5
+  minReadySeconds: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
-      app: knotree-accounts
+      app.kubernetes.io/name: knotree-accounts
+      app.kubernetes.io/component: api
   template:
     metadata:
       labels:
-        app: knotree-accounts
+        app.kubernetes.io/name: knotree-accounts
+        app.kubernetes.io/part-of: knotree-accounts
+        app.kubernetes.io/component: api
     spec:
+      serviceAccountName: knotree-accounts
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
+        runAsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
+      imagePullSecrets:
+        - name: registry-credentials
       containers:
         - name: api
-          image: knotree-accounts:local
+          image: __KNOTREE_ACCOUNTS_IMAGE__
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8080
+              protocol: TCP
           envFrom:
+            - configMapRef:
+                name: knotree-accounts-config
+            - configMapRef:
+                name: knotree-accounts-admin
+                optional: true
             - secretRef:
-                name: knotree-accounts
+                name: knotree-accounts-runtime
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /ready
               port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /health
               port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
           resources:
             requests:
               cpu: 100m
               memory: 256Mi
             limits:
+              cpu: "1"
               memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: knotree-accounts
-spec:
-  selector:
-    app: knotree-accounts
-  ports:
-    - name: http
-      port: 80
-      targetPort: http
+          volumeMounts:
+            - name: postgres-ca
+              mountPath: /run/secrets/postgres-ca
+              readOnly: true
+      volumes:
+        - name: postgres-ca
+          secret:
+            secretName: postgres-ca
+            defaultMode: 0444
+            items:
+              - key: ca.crt
+                path: ca.crt

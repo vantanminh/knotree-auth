@@ -1,0 +1,22 @@
+  - name: knotree-accounts-api
+    url: http://knotree-accounts.knotree-accounts.svc.cluster.local:80
+    connect_timeout: 5000
+    read_timeout: 60000
+    write_timeout: 60000
+    retries: 3
+    routes:
+      - name: knotree-accounts-api-origin
+        hosts:
+          - accounts-api.knotree.com
+        paths:
+          - /
+        methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+          - HEAD
+        strip_path: false
+        preserve_host: true

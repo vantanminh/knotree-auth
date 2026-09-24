@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit --pretty false && vite build",
+    "deploy:worker": "wrangler deploy",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit --pretty false",
     "lint": "tsc --noEmit --pretty false",
@@ -30,6 +31,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.2",
     "vite": "^8.3.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wrangler": "4.122.0"
   }
 }

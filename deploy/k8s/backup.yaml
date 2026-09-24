@@ -1,0 +1,159 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: knotree-accounts-postgres-backup
+  namespace: knotree-accounts
+  labels:
+    app.kubernetes.io/name: knotree-accounts
+    app.kubernetes.io/part-of: knotree-accounts
+spec:
+  schedule: "0 2 * * *"
+  timeZone: Etc/UTC
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: knotree-accounts-backup
+        app.kubernetes.io/part-of: knotree-accounts
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: knotree-accounts-backup
+            app.kubernetes.io/part-of: knotree-accounts
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: registry-credentials
+          initContainers:
+            - name: dump-database
+              image: postgres:16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-ec"]
+              args:
+                - |
+                  file="/backup/knotree-accounts-$(date -u +%Y%m%dT%H%M%SZ).dump"
+                  pg_dump --format=custom --no-owner --no-acl --file="$file" "$DATABASE_URL"
+                  pg_restore --list "$file" >/dev/null
+                  (cd /backup && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: knotree-accounts-runtime
+                      key: DATABASE_URL
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                  ephemeral-storage: 1Gi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+                  ephemeral-storage: 4Gi
+              securityContext:
+                runAsUser: 70
+                runAsGroup: 70
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: postgres-ca
+                  mountPath: /run/secrets/postgres-ca
+                  readOnly: true
+                - name: backup
+                  mountPath: /backup
+                - name: tmp
+                  mountPath: /tmp
+            - name: upload-backup
+              image: public.ecr.aws/aws-cli/aws-cli@sha256:b0dd5a4d216a1786863541a201baa7b7b4c5032bec9c6e72c38d01cafd7e8db8
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-ec"]
+              args:
+                - |
+                  file="$(find /backup -maxdepth 1 -type f -name '*.dump' -print -quit)"
+                  test -n "$file"
+                  destination="s3://$R2_BUCKET/knotree-accounts/postgres/$(basename "$file")"
+                  aws s3 cp "$file" "$destination" --endpoint-url "$R2_ENDPOINT_URL" --only-show-errors
+                  aws s3 cp "$file.sha256" "$destination.sha256" --endpoint-url "$R2_ENDPOINT_URL" --only-show-errors
+              env:
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: knotree-accounts-backup
+                      key: R2_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: knotree-accounts-backup
+                      key: R2_SECRET_ACCESS_KEY
+                - name: AWS_DEFAULT_REGION
+                  value: auto
+                - name: AWS_EC2_METADATA_DISABLED
+                  value: "true"
+                - name: AWS_CONFIG_FILE
+                  value: /dev/null
+                - name: HOME
+                  value: /tmp
+                - name: R2_ENDPOINT_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: knotree-accounts-backup
+                      key: R2_ENDPOINT_URL
+                - name: R2_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: knotree-accounts-backup
+                      key: R2_BUCKET
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 128Mi
+                  ephemeral-storage: 128Mi
+                limits:
+                  cpu: 250m
+                  memory: 256Mi
+                  ephemeral-storage: 512Mi
+              securityContext:
+                runAsUser: 10001
+                runAsGroup: 10001
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: postgres-ca
+              secret:
+                secretName: postgres-ca
+                defaultMode: 0444
+                items:
+                  - key: ca.crt
+                    path: ca.crt
+            - name: backup
+              emptyDir:
+                sizeLimit: 4Gi
+            - name: tmp
+              emptyDir:
+                sizeLimit: 128Mi
