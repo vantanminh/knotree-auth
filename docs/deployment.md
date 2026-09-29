@@ -148,3 +148,20 @@ database backups. Losing the TOTP key prevents decryption of enrolled
 authenticator secrets; losing the JWT signing key invalidates signing-key
 continuity. The PostgreSQL CA private key is required to renew its server
 certificate.
+
+## Automatic API delivery
+
+After the production bootstrap above is complete, configure repository
+secrets `SSH_PRIVATE_KEY`, `SSH_HOST`, `SSH_USER`, and `SSH_KNOWN_HOSTS`
+(the pinned SSH server key), then set repository variable
+`K3S_DEPLOY_ENABLED=true`. Each successful push to `main` runs quality and
+E2E checks, publishes the API image, and sends the checked-in deploy scripts
+to the VPS with its immutable digest. The VPS only pulls and runs the image;
+it never builds the backend. The deploy script retains its runtime-secret,
+TLS, initial offsite backup, readiness and Kong-routing checks. Failed checks
+fail delivery rather than claiming a successful deployment. Deployments are
+serialized so an in-flight backup or rollout is not canceled by a later push.
+
+`K3S_DEPLOY_ENABLED` is unset until runtime and backup secrets are provisioned.
+The frontend Worker still uses the separate Worker workflow and requires its
+Cloudflare credentials; API delivery alone does not publish the login UI.

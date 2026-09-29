@@ -121,6 +121,8 @@ jobs:
 
   publish-api-image:
     name: Publish API image by digest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     needs: [backend, frontend, e2e]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -159,3 +161,36 @@ jobs:
         run: |
           echo "Published ghcr.io/vantanminh/knotree-auth:$IMAGE_TAG" >> "$GITHUB_STEP_SUMMARY"
           echo "Digest: $IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-api:
+    name: Deploy immutable API image to k3s
+    needs: publish-api-image
+    if: github.ref == 'refs/heads/main' && vars.K3S_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    concurrency:
+      group: accounts-k3s-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload deployment scripts and run on k3s
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          IMAGE_DIGEST: ${{ needs.publish-api-image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY" && test -n "$SSH_HOST" && test -n "$SSH_USER" && test -n "$SSH_KNOWN_HOSTS"
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/id_ed25519"' EXIT
+          tar -czf - deploy/k8s | ssh -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "${SSH_USER}@${SSH_HOST}" \
+            "set -eu; task_dir=\$(mktemp -d /tmp/accounts-deploy.XXXXXX); trap 'rm -rf \"\$task_dir\"' EXIT; tar -xzf - -C \"\$task_dir\"; bash \"\$task_dir/deploy/k8s/deploy.sh\" ghcr.io/vantanminh/knotree-auth@$IMAGE_DIGEST"
