@@ -1,7 +1,7 @@
-use crate::AppError;
 use crate::error::AppResult;
 use crate::security::password::normalize_email;
 use crate::state::AppState;
+use crate::AppError;
 use chrono::Utc;
 use uuid::Uuid;
 
