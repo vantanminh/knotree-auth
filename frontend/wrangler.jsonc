@@ -13,8 +13,8 @@
   },
   "routes": [
     {
-      "pattern": "accounts.knotree.com",
-      "custom_domain": true
+      "pattern": "accounts.knotree.com/*",
+      "zone_name": "knotree.com"
     }
   ]
 }

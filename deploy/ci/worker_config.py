@@ -23,8 +23,18 @@ def main():
     if origin.scheme != "https" or not origin.hostname or origin.username or origin.password or origin.query or origin.fragment:
         raise ValueError("Worker API_ORIGIN must be HTTPS")
     routes = config.get("routes", [])
-    if len(routes) != 1 or routes[0].get("custom_domain") is not True or not re.fullmatch(r"[A-Za-z0-9.-]+", routes[0].get("pattern", "")):
-        raise ValueError("Worker requires exactly one custom domain")
+    if len(routes) != 1:
+        raise ValueError("Worker requires exactly one route")
+    route = routes[0]
+    pattern = route.get("pattern", "")
+    hostname = re.compile(r"[A-Za-z0-9.-]+")
+    if route.get("custom_domain") is True:
+        if not hostname.fullmatch(pattern):
+            raise ValueError("Worker custom domain must be a hostname")
+    elif hostname.fullmatch(route.get("zone_name", "")) and pattern.endswith("/*") and hostname.fullmatch(pattern[:-2]):
+        pass
+    else:
+        raise ValueError("Worker route must be one custom domain or one zone route")
     Path(sys.argv[1]).write_text(json.dumps(config))
 
 
