@@ -453,12 +453,11 @@ async fn configured_super_admin_must_be_verified_before_existing_admin_is_replac
         .await
         .is_err());
 
-    let admins: Vec<uuid::Uuid> = sqlx::query_scalar(
-        "SELECT user_id FROM role_assignments WHERE role = 'super_admin'",
-    )
-    .fetch_all(&verified_state.db)
-    .await
-    .unwrap();
+    let admins: Vec<uuid::Uuid> =
+        sqlx::query_scalar("SELECT user_id FROM role_assignments WHERE role = 'super_admin'")
+            .fetch_all(&verified_state.db)
+            .await
+            .unwrap();
     assert_eq!(admins, vec![verified_id]);
 }
 

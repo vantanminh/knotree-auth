@@ -1,3 +1,4 @@
+use crate::AppError;
 use crate::error::AppResult;
 use crate::security::password::normalize_email;
 use crate::state::AppState;
@@ -16,9 +17,9 @@ pub async fn bootstrap_admin(state: &AppState) -> AppResult<()> {
             )
             "#,
         )
-            .bind(user_id)
-            .fetch_one(&state.db)
-            .await?;
+        .bind(user_id)
+        .fetch_one(&state.db)
+        .await?;
         if !eligible {
             return Err(AppError::internal(
                 "SUPER_ADMIN_USER_ID must reference an active user with a verified primary email",
