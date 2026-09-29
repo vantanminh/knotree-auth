@@ -18,3 +18,10 @@ playwright-report/
 test-results/
 coverage/
 *.pem
+
+# CI-only deployment payloads
+deploy/ci/__pycache__/
+frontend/wrangler.ci.json
+deploy/ci/runtime.json
+deploy/ci/values.json
+deploy/ci/patch.json

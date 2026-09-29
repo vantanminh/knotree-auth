@@ -77,9 +77,6 @@ spec:
           envFrom:
             - configMapRef:
                 name: knotree-accounts-config
-            - configMapRef:
-                name: knotree-accounts-admin
-                optional: true
             - secretRef:
                 name: knotree-accounts-runtime
           startupProbe:

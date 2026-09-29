@@ -34,3 +34,7 @@ An example relying party is in `examples/knotree-study`.
 cd backend && cargo fmt --all --check && cargo clippy --all-targets --features test-util -- -D warnings && cargo test --features test-util
 cd frontend && npm test && npm run typecheck && npm run build
 ```
+
+### Production settings through GitHub Actions
+
+Production configuration is now managed exclusively by GitHub Actions. Follow [the CI configuration guide](deploy/ci/README.md) and its JSON examples; previous server bootstrap/secret-copy instructions are superseded. A missing required setting fails deploy preflight before production changes.

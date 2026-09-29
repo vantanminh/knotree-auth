@@ -1,11 +1,6 @@
 name: Deploy Accounts Worker
-
-on:
-  workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   deploy:
     name: Build and deploy production Worker
@@ -14,33 +9,32 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install and build static assets
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
-      - name: Check Cloudflare deployment configuration
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          test -n "$CLOUDFLARE_API_TOKEN" || {
-            echo "Repository secret CLOUDFLARE_API_TOKEN is required" >&2
-            exit 1
-          }
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || {
-            echo "Repository variable CLOUDFLARE_ACCOUNT_ID is required" >&2
-            exit 1
-          }
-      - name: Deploy Worker and custom domain
-        working-directory: frontend
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: npm run deploy:worker
+    - uses: actions/checkout@v4
+    - name: Fail on missing GitHub Worker configuration
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        WORKER_CONFIG_JSON: ${{ vars.WORKER_CONFIG_JSON }}
+      run: python3 deploy/ci/worker_config.py frontend/wrangler.ci.json
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+    - name: Install and build static assets
+      working-directory: frontend
+      run: |
+        npm ci
+        npm run build
+    - name: Deploy Worker and custom domain
+      working-directory: frontend
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      run: npx wrangler deploy --config wrangler.ci.json
+    concurrency:
+      group: accounts-worker-production
+      cancel-in-progress: false
+'on':
+  workflow_dispatch: null
+  workflow_call: {}

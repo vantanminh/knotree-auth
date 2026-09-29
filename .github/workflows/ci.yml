@@ -1,10 +1,35 @@
 name: ci
-
-on:
-  push:
-  pull_request:
-
 jobs:
+  deploy-preflight:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Fail deployment on missing GitHub configuration
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        SSH_HOST: ${{ secrets.SSH_HOST }}
+        SSH_USER: ${{ secrets.SSH_USER }}
+        SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        K8S_CONFIG_JSON: ${{ vars.K8S_CONFIG_JSON }}
+        K8S_SECRETS_JSON: ${{ secrets.K8S_SECRETS_JSON }}
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        WORKER_CONFIG_JSON: ${{ vars.WORKER_CONFIG_JSON }}
+      run: |
+        set -euo pipefail
+        task_dir=$(mktemp -d)
+        trap 'rm -rf "$task_dir"' EXIT
+        python3 deploy/ci/runtime.py prepare "$task_dir"
+        python3 deploy/ci/worker_config.py "$task_dir/worker.json"
+        python3 - "$task_dir/runtime.json" "$task_dir/worker.json" <<'PY'
+        import json,sys
+        r=json.load(open(sys.argv[1]))["config"]
+        w=json.load(open(sys.argv[2]))
+        assert json.load(open(sys.argv[1]))["secrets"]["CLOUDFLARE_ACCOUNT_ID"] == __import__("os").environ["CLOUDFLARE_ACCOUNT_ID"], "Email and Worker accounts differ"
+        assert r["APP_BASE_URL"] == "https://"+w["routes"][0]["pattern"], "Worker and Accounts public URL differ"
+        assert r["PUBLIC_API_ORIGIN"] == w["vars"]["API_ORIGIN"], "Worker API origin differs"
+        PY
   backend:
     runs-on: ubuntu-latest
     services:
@@ -15,47 +40,41 @@ jobs:
           POSTGRES_PASSWORD: knotree
           POSTGRES_DB: knotree_accounts_test
         ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U knotree -d knotree_accounts_test"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 20
+        - 5432:5432
+        options: --health-cmd "pg_isready -U knotree -d knotree_accounts_test" --health-interval 5s --health-timeout 3s --health-retries 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - name: Format
-        working-directory: backend
-        run: cargo fmt --all --check
-      - name: Clippy
-        working-directory: backend
-        run: cargo clippy --all-targets --features test-util -- -D warnings
-      - name: Test
-        working-directory: backend
-        env:
-          TEST_DATABASE_URL: postgres://knotree:knotree@127.0.0.1:5432/knotree_accounts_test
-        run: cargo test --features test-util
-
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    - name: Format
+      working-directory: backend
+      run: cargo fmt --all --check
+    - name: Clippy
+      working-directory: backend
+      run: cargo clippy --all-targets --features test-util -- -D warnings
+    - name: Test
+      working-directory: backend
+      env:
+        TEST_DATABASE_URL: postgres://knotree:knotree@127.0.0.1:5432/knotree_accounts_test
+      run: cargo test --features test-util
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - working-directory: frontend
-        run: npm ci
-      - working-directory: frontend
-        run: npm test
-      - working-directory: frontend
-        run: npm run typecheck
-      - working-directory: frontend
-        run: npm run build
-
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+    - working-directory: frontend
+      run: npm ci
+    - working-directory: frontend
+      run: npm test
+    - working-directory: frontend
+      run: npm run typecheck
+    - working-directory: frontend
+      run: npm run build
   e2e:
     runs-on: ubuntu-latest
     services:
@@ -66,131 +85,135 @@ jobs:
           POSTGRES_PASSWORD: knotree
           POSTGRES_DB: knotree_accounts
         ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U knotree -d knotree_accounts"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 20
+        - 5432:5432
+        options: --health-cmd "pg_isready -U knotree -d knotree_accounts" --health-interval 5s --health-timeout 3s --health-retries 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - working-directory: frontend
-        run: npm ci
-      - working-directory: frontend
-        run: npx playwright install --with-deps chromium
-      - name: Build API
-        working-directory: backend
-        run: cargo build --quiet
-      - name: Playwright
-        working-directory: frontend
-        env:
-          DATABASE_URL: postgres://knotree:knotree@127.0.0.1:5432/knotree_accounts
-          APP_ENV: development
-          APP_BASE_URL: http://localhost:5173
-          COOKIE_SECURE: "false"
-          DEV_MAILBOX: "true"
-          EMAIL_PROVIDER: outbox
-          BIND_ADDR: 127.0.0.1:8080
-          ARGON2_MEMORY_KIB: "8192"
-          ARGON2_ITERATIONS: "1"
-          ARGON2_PARALLELISM: "1"
-        run: |
-          ../backend/target/debug/knotree-accounts > /tmp/knotree-api.log 2>&1 &
-          echo $! > /tmp/knotree-api.pid
-          for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/ready; then
-              npm run e2e
-              exit $?
-            fi
-            if ! kill -0 "$(cat /tmp/knotree-api.pid)" 2>/dev/null; then
-              echo "API exited before it was ready"
-              cat /tmp/knotree-api.log
-              exit 1
-            fi
-            sleep 1
-          done
-          echo "API did not become ready"
-          cat /tmp/knotree-api.log
-          exit 1
-
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+    - working-directory: frontend
+      run: npm ci
+    - working-directory: frontend
+      run: npx playwright install --with-deps chromium
+    - name: Build API
+      working-directory: backend
+      run: cargo build --quiet
+    - name: Playwright
+      working-directory: frontend
+      env:
+        DATABASE_URL: postgres://knotree:knotree@127.0.0.1:5432/knotree_accounts
+        APP_ENV: development
+        APP_BASE_URL: http://localhost:5173
+        COOKIE_SECURE: 'false'
+        DEV_MAILBOX: 'true'
+        EMAIL_PROVIDER: outbox
+        BIND_ADDR: 127.0.0.1:8080
+        ARGON2_MEMORY_KIB: '8192'
+        ARGON2_ITERATIONS: '1'
+        ARGON2_PARALLELISM: '1'
+      run: |
+        ../backend/target/debug/knotree-accounts > /tmp/knotree-api.log 2>&1 &
+        echo $! > /tmp/knotree-api.pid
+        for _ in $(seq 1 30); do
+          if curl -fsS http://127.0.0.1:8080/ready; then
+            npm run e2e
+            exit $?
+          fi
+          if ! kill -0 "$(cat /tmp/knotree-api.pid)" 2>/dev/null; then
+            echo "API exited before it was ready"
+            cat /tmp/knotree-api.log
+            exit 1
+          fi
+          sleep 1
+        done
+        echo "API did not become ready"
+        cat /tmp/knotree-api.log
+        exit 1
   publish-api-image:
     name: Publish API image by digest
     outputs:
       digest: ${{ steps.build.outputs.digest }}
-    needs: [backend, frontend, e2e]
+    needs:
+    - backend
+    - frontend
+    - e2e
+    - deploy-preflight
+    - deploy-contract-tests
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and publish
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile
-          push: true
-          tags: ghcr.io/vantanminh/knotree-auth:commit-${{ github.sha }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha,scope=knotree-accounts-api
-          cache-to: type=gha,mode=max,scope=knotree-accounts-api
-          provenance: true
-          sbom: true
-      - name: Record immutable image reference
-        env:
-          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
-          IMAGE_TAG: commit-${{ github.sha }}
-        run: |
-          echo "Published ghcr.io/vantanminh/knotree-auth:$IMAGE_TAG" >> "$GITHUB_STEP_SUMMARY"
-          echo "Digest: $IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
-
+    - uses: actions/checkout@v4
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build and publish
+      id: build
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: docker/Dockerfile
+        push: true
+        tags: ghcr.io/vantanminh/knotree-auth:commit-${{ github.sha }}
+        labels: |
+          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          org.opencontainers.image.revision=${{ github.sha }}
+        cache-from: type=gha,scope=knotree-accounts-api
+        cache-to: type=gha,mode=max,scope=knotree-accounts-api
+        provenance: true
+        sbom: true
+    - name: Record immutable image reference
+      env:
+        IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        IMAGE_TAG: commit-${{ github.sha }}
+      run: |
+        echo "Published ghcr.io/vantanminh/knotree-auth:$IMAGE_TAG" >> "$GITHUB_STEP_SUMMARY"
+        echo "Digest: $IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
   deploy-api:
     name: Deploy immutable API image to k3s
     needs: publish-api-image
-    if: github.ref == 'refs/heads/main' && vars.K3S_DEPLOY_ENABLED == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 80
     concurrency:
-      group: accounts-k3s-production
+      group: knotree-auth-production-runtime
       cancel-in-progress: false
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - name: Upload deployment scripts and run on k3s
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
-          IMAGE_DIGEST: ${{ needs.publish-api-image.outputs.digest }}
-        run: |
-          set -euo pipefail
-          test -n "$SSH_PRIVATE_KEY" && test -n "$SSH_HOST" && test -n "$SSH_USER" && test -n "$SSH_KNOWN_HOSTS"
-          [[ "$IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
-          chmod 600 "$HOME/.ssh/id_ed25519"
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          trap 'rm -f "$HOME/.ssh/id_ed25519"' EXIT
-          tar -czf - deploy/k8s | ssh -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
-            -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "${SSH_USER}@${SSH_HOST}" \
-            "set -eu; task_dir=\$(mktemp -d /tmp/accounts-deploy.XXXXXX); trap 'rm -rf \"\$task_dir\"' EXIT; tar -xzf - -C \"\$task_dir\"; bash \"\$task_dir/deploy/k8s/deploy.sh\" ghcr.io/vantanminh/knotree-auth@$IMAGE_DIGEST"
+    - uses: actions/checkout@v4
+    - name: Apply validated GitHub runtime and deploy CI images
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        SSH_HOST: ${{ secrets.SSH_HOST }}
+        SSH_USER: ${{ secrets.SSH_USER }}
+        SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        K8S_CONFIG_JSON: ${{ vars.K8S_CONFIG_JSON }}
+        K8S_SECRETS_JSON: ${{ secrets.K8S_SECRETS_JSON }}
+        IMAGE_DIGEST: ${{ needs.publish-api-image.outputs.digest }}
+      run: bash deploy/ci/deliver.sh "ghcr.io/vantanminh/knotree-auth@$IMAGE_DIGEST"
+  deploy-worker:
+    needs:
+    - deploy-api
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/worker-deploy.yml
+    secrets: inherit
+  deploy-contract-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - run: python3 -m unittest discover -s deploy/ci -p "test_*.py"
+'on':
+  push: null
+  pull_request: null

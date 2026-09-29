@@ -73,7 +73,7 @@ print("\n".join(ready))
 ')"
 printf 'Schedulable Ready node(s): %s\n' "$(printf '%s' "$ready_nodes" | tr '\n' ' ')"
 
-kube apply -f "$script_dir/config.yaml" >/dev/null
+test -n "${CI_RUNTIME_CHECKSUM:?Run deployment through GitHub CI runtime provisioning}"
 kube apply -f "$script_dir/network-policy.yaml" >/dev/null
 kube apply -f "$script_dir/postgres.yaml" >/dev/null
 kube apply -f "$script_dir/availability.yaml" >/dev/null
@@ -85,7 +85,9 @@ python3 - "$script_dir/api.yaml" "$tmp/api.yaml" "$image" <<'PY'
 from pathlib import Path
 import sys
 
+import os
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
+source = source.replace("  template:\n    metadata:\n", "  template:\n    metadata:\n      annotations:\n        github-runtime/checksum: " + os.environ["CI_RUNTIME_CHECKSUM"] + "\n", 1)
 marker = "__KNOTREE_ACCOUNTS_IMAGE__"
 if source.count(marker) != 1:
     raise SystemExit("API manifest must contain exactly one image placeholder")

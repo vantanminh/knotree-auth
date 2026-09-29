@@ -1,0 +1,152 @@
+{
+  "namespace": "knotree-accounts",
+  "configmap": "knotree-accounts-config",
+  "runtime_secret": "knotree-accounts-runtime",
+  "pull_secret": "registry-credentials",
+  "config": [
+    "APP_ENV",
+    "APP_BASE_URL",
+    "BIND_ADDR",
+    "COOKIE_SECURE",
+    "DEV_MAILBOX",
+    "EMAIL_PROVIDER",
+    "EMAIL_FROM",
+    "EMAIL_FROM_NAME",
+    "CORS_ORIGINS",
+    "TRUST_PROXY",
+    "ARGON2_MEMORY_KIB",
+    "ARGON2_ITERATIONS",
+    "ARGON2_PARALLELISM",
+    "JWT_KEY_ID",
+    "TOTP_ENCRYPTION_KEY_VERSION",
+    "LOG_FORMAT",
+    "PUBLIC_API_ORIGIN",
+    "SESSION_TTL_HOURS",
+    "SESSION_IDLE_HOURS",
+    "ADMIN_SESSION_HOURS",
+    "ADMIN_IDLE_MINUTES",
+    "STEP_UP_MINUTES",
+    "ACCESS_TOKEN_SECONDS",
+    "REFRESH_TOKEN_DAYS",
+    "AUTH_CODE_SECONDS",
+    "EMAIL_OTP_SECONDS",
+    "VERIFICATION_HOURS",
+    "RESET_MINUTES",
+    "GOOGLE_AUTHORIZE_URL",
+    "GOOGLE_TOKEN_URL",
+    "GOOGLE_JWKS_URL",
+    "GITHUB_AUTHORIZE_URL",
+    "GITHUB_TOKEN_URL",
+    "GITHUB_USER_URL",
+    "GITHUB_EMAILS_URL"
+  ],
+  "secrets": [
+    "POSTGRES_PASSWORD",
+    "DATABASE_URL",
+    "JWT_PRIVATE_KEY_PEM",
+    "TOTP_ENCRYPTION_KEYS",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_EMAIL_API_TOKEN",
+    "METRICS_TOKEN",
+    "GHCR_USERNAME",
+    "GHCR_TOKEN",
+    "POSTGRES_CA_PEM",
+    "POSTGRES_TLS_CERT_PEM",
+    "POSTGRES_TLS_KEY_PEM",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_ENDPOINT_URL",
+    "R2_BUCKET"
+  ],
+  "optional_config": [
+    "SUPER_ADMIN_USER_ID",
+    "SUPER_ADMIN_EMAIL",
+    "JWT_PREVIOUS_KEY_ID"
+  ],
+  "optional_secrets": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET",
+    "JWT_PREVIOUS_PUBLIC_KEY_PEM"
+  ],
+  "fixed": {
+    "APP_ENV": "production",
+    "EMAIL_PROVIDER": "cloudflare",
+    "DEV_MAILBOX": "false",
+    "COOKIE_SECURE": "true",
+    "PUBLIC_API_ORIGIN": "https://accounts-api.knotree.com"
+  },
+  "https": [
+    "APP_BASE_URL",
+    "PUBLIC_API_ORIGIN"
+  ],
+  "extra_secrets": [
+    {
+      "name": "postgres-ca",
+      "keys": {
+        "ca.crt": "POSTGRES_CA_PEM"
+      }
+    },
+    {
+      "name": "postgres-server-tls",
+      "keys": {
+        "ca.crt": "POSTGRES_CA_PEM",
+        "tls.crt": "POSTGRES_TLS_CERT_PEM",
+        "tls.key": "POSTGRES_TLS_KEY_PEM"
+      }
+    },
+    {
+      "name": "knotree-accounts-backup",
+      "keys": {
+        "R2_ACCESS_KEY_ID": "R2_ACCESS_KEY_ID",
+        "R2_SECRET_ACCESS_KEY": "R2_SECRET_ACCESS_KEY",
+        "R2_ENDPOINT_URL": "R2_ENDPOINT_URL",
+        "R2_BUCKET": "R2_BUCKET"
+      }
+    }
+  ],
+  "auxiliary_secrets": [
+    "GHCR_USERNAME",
+    "GHCR_TOKEN",
+    "POSTGRES_CA_PEM",
+    "POSTGRES_TLS_CERT_PEM",
+    "POSTGRES_TLS_KEY_PEM",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_ENDPOINT_URL",
+    "R2_BUCKET"
+  ],
+  "preserve": {
+    "knotree-accounts-runtime": [
+      "POSTGRES_PASSWORD",
+      "DATABASE_URL",
+      "JWT_PRIVATE_KEY_PEM",
+      "TOTP_ENCRYPTION_KEYS"
+    ],
+    "postgres-ca": [
+      "ca.crt"
+    ],
+    "postgres-server-tls": [
+      "ca.crt",
+      "tls.crt",
+      "tls.key"
+    ]
+  },
+  "secret_groups": [
+    [
+      "GOOGLE_CLIENT_ID",
+      "GOOGLE_CLIENT_SECRET"
+    ],
+    [
+      "GITHUB_CLIENT_ID",
+      "GITHUB_CLIENT_SECRET"
+    ]
+  ],
+  "cross_groups": [
+    [
+      "JWT_PREVIOUS_KEY_ID",
+      "JWT_PREVIOUS_PUBLIC_KEY_PEM"
+    ]
+  ]
+}
