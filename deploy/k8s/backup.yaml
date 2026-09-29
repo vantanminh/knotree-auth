@@ -49,7 +49,18 @@ spec:
               args:
                 - |
                   file="/backup/knotree-accounts-$(date -u +%Y%m%dT%H%M%SZ).dump"
-                  pg_dump --format=custom --no-owner --no-acl --file="$file" "$DATABASE_URL"
+                  attempt=1
+                  while [ "$attempt" -le 20 ]; do
+                    if pg_dump --format=custom --no-owner --no-acl --file="$file" "$DATABASE_URL"; then
+                      break
+                    fi
+                    rm -f "$file"
+                    if [ "$attempt" -eq 20 ]; then
+                      exit 1
+                    fi
+                    attempt=$((attempt + 1))
+                    sleep 3
+                  done
                   pg_restore --list "$file" >/dev/null
                   (cd /backup && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
               env:
