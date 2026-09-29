@@ -15,6 +15,10 @@ class Invalid(Exception):
     pass
 
 
+UUID_PATTERN = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$")
+POSTGRES_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
+
+
 def unique(pairs):
     result = {}
     for key, value in pairs:
@@ -66,6 +70,20 @@ def validate(contract, config, secrets):
         url = urlsplit(secrets["DATABASE_URL"])
         if url.scheme not in ("postgres", "postgresql") or unquote(url.password or "") != secrets["POSTGRES_PASSWORD"]:
             raise Invalid("DATABASE_URL must use POSTGRES_PASSWORD")
+    identity = contract.get("database_identity")
+    if identity:
+        user = config[identity["user"]]
+        database = config[identity["database"]]
+        if not POSTGRES_IDENTIFIER.fullmatch(user) or not POSTGRES_IDENTIFIER.fullmatch(database):
+            raise Invalid("PostgreSQL user/database must be simple identifiers")
+        url = urlsplit(secrets["DATABASE_URL"])
+        if (url.scheme not in ("postgres", "postgresql")
+                or unquote(url.username or "") != user
+                or unquote(url.path.removeprefix("/")) != database):
+            raise Invalid("DATABASE_URL must use POSTGRES_USER and POSTGRES_DB")
+    for key in contract.get("uuid_config", []):
+        if key in config and not UUID_PATTERN.fullmatch(config[key]):
+            raise Invalid("Invalid UUID configuration: " + key)
     for group in contract.get("secret_groups", []):
         if any(secrets.get(k) for k in group) and not all(secrets.get(k) for k in group):
             raise Invalid("Incomplete secret group: " + ", ".join(group))
@@ -109,7 +127,8 @@ def manifests(contract, config, secrets):
 
 
 def kube(args, data=None, absent=False):
-    result = subprocess.run(["k3s", "kubectl", *args], input=data, text=True, capture_output=True)
+    command = ["kubectl"] if os.environ.get("KUBECONFIG") else ["k3s", "kubectl"]
+    result = subprocess.run([*command, *args], input=data, text=True, capture_output=True)
     if result.returncode:
         # kubectl errors may embed submitted secret data. Never forward stderr.
         raise Invalid("Kubernetes operation failed (details withheld to protect secrets)")
@@ -121,6 +140,26 @@ def kube(args, data=None, absent=False):
 def apply(contract, config, secrets):
     objects = manifests(contract, config, secrets)
     ns = contract["namespace"]
+    preserve_env = contract.get("preserve_statefulset_env")
+    if preserve_env:
+        namespace = kube(["get", "namespace", ns, "--ignore-not-found", "-o", "name"], absent=True)
+        if namespace:
+            current = kube(["get", "statefulset", preserve_env["name"], "-n", ns,
+                            "--ignore-not-found", "-o", "json"], absent=True)
+            if current:
+                statefulset = json.loads(current)
+                container = next((item for item in statefulset.get("spec", {}).get("template", {}).get("spec", {}).get("containers", [])
+                                  if item.get("name") == preserve_env["container"]), None)
+                actual = {item.get("name"): item.get("value") for item in (container or {}).get("env", [])}
+                for env_name, config_key in preserve_env["values"].items():
+                    if actual.get(env_name) != config[config_key]:
+                        raise Invalid("Refusing implicit PostgreSQL identity change: " + env_name)
+            else:
+                if preserve_env.get("required"):
+                    raise Invalid("Existing PostgreSQL StatefulSet is required before runtime update")
+                pvc_json = kube(["get", "pvc", "-n", ns, "-o", "json"])
+                if json.loads(pvc_json).get("items"):
+                    raise Invalid("PostgreSQL StatefulSet is missing while PVC data remains")
     # Validate all immutable credentials BEFORE any mutation. Changing a Secret
     # does not rotate a live PostgreSQL password or re-encrypt stored data.
     for name, keys in contract["preserve"].items():
@@ -148,12 +187,12 @@ def main():
     contract = json.loads(Path(__file__).with_name("contract.json").read_text())
     command = sys.argv[1]
     if command == "prepare":
-        missing = [k for k in ["SSH_HOST", "SSH_USER", "SSH_PRIVATE_KEY", "SSH_KNOWN_HOSTS", "K8S_CONFIG_JSON", "K8S_SECRETS_JSON", *contract.get("external_secrets", [])] if not os.environ.get(k, "").strip()]
+        missing = [k for k in ["KUBE_CONFIG", "K8S_CONFIG_JSON", "K8S_SECRETS_JSON", *contract.get("external_secrets", [])] if not os.environ.get(k, "").strip()]
         if missing:
             raise Invalid("Missing GitHub Actions Secrets/Variables: " + ", ".join(missing))
-        for key in ["SSH_HOST", "SSH_USER"]:
-            if not re.fullmatch(r"[A-Za-z0-9_.:-]+", os.environ[key]) or os.environ[key].startswith("-"):
-                raise Invalid("Invalid SSH setting: " + key)
+        kubeconfig = os.environ["KUBE_CONFIG"]
+        if "https://15.235.210.66:6443" not in kubeconfig or not any(marker in kubeconfig for marker in ("token:", "client-certificate-data:")):
+            raise Invalid("KUBE_CONFIG must target the production k3s API")
         supplied = decode(os.environ["K8S_SECRETS_JSON"], "K8S_SECRETS_JSON")
         for key in contract.get("external_secrets", []):
             if key in supplied:
@@ -165,6 +204,20 @@ def main():
         path = target / "runtime.json"
         path.write_text(json.dumps({"config": config, "secrets": secrets}))
         path.chmod(0o600)
+    elif command == "render-postgres":
+        packet = decode(Path(sys.argv[2]).read_text(), "runtime payload")
+        config, secrets = validate(contract, packet["config"], packet["secrets"])
+        del secrets
+        source = Path(sys.argv[3]).read_text(encoding="utf-8")
+        replacements = {
+            "__KNOTREE_POSTGRES_USER__": config[contract["database_identity"]["user"]],
+            "__KNOTREE_POSTGRES_DB__": config[contract["database_identity"]["database"]],
+        }
+        for marker, value in replacements.items():
+            if marker not in source:
+                raise Invalid("PostgreSQL manifest is missing a runtime marker: " + marker)
+            source = source.replace(marker, value)
+        Path(sys.argv[4]).write_text(source, encoding="utf-8")
     else:
         packet = decode(Path(sys.argv[2]).read_text(), "runtime payload")
         config, secrets = validate(contract, packet["config"], packet["secrets"])

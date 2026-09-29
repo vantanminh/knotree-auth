@@ -92,9 +92,9 @@ spec:
             - password_encryption=scram-sha-256
           env:
             - name: POSTGRES_DB
-              value: knotree_accounts
+              value: __KNOTREE_POSTGRES_DB__
             - name: POSTGRES_USER
-              value: knotree_accounts
+              value: __KNOTREE_POSTGRES_USER__
             - name: POSTGRES_PASSWORD_FILE
               value: /run/secrets/postgres/password
             - name: PGDATA
@@ -108,7 +108,7 @@ spec:
               command:
                 - /bin/sh
                 - -ec
-                - pg_isready -U knotree_accounts -d knotree_accounts -h 127.0.0.1 -p 5432
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1 -p 5432
             periodSeconds: 5
             timeoutSeconds: 5
             failureThreshold: 30
@@ -117,7 +117,7 @@ spec:
               command:
                 - /bin/sh
                 - -ec
-                - pg_isready -U knotree_accounts -d knotree_accounts -h 127.0.0.1 -p 5432
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1 -p 5432
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
@@ -126,7 +126,7 @@ spec:
               command:
                 - /bin/sh
                 - -ec
-                - pg_isready -U knotree_accounts -d knotree_accounts -h 127.0.0.1 -p 5432
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1 -p 5432
             initialDelaySeconds: 30
             periodSeconds: 20
             timeoutSeconds: 5

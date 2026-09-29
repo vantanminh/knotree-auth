@@ -6,13 +6,23 @@ use uuid::Uuid;
 
 pub async fn bootstrap_admin(state: &AppState) -> AppResult<()> {
     if let Some(user_id) = state.config.super_admin_user_id {
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+        let eligible: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM users u
+                JOIN user_emails e ON e.user_id = u.id AND e.is_primary
+                WHERE u.id = $1 AND u.status = 'active' AND e.verified_at IS NOT NULL
+            )
+            "#,
+        )
             .bind(user_id)
             .fetch_one(&state.db)
             .await?;
-        if !exists {
-            tracing::warn!(%user_id, "SUPER_ADMIN_USER_ID does not match a user yet");
-            return Ok(());
+        if !eligible {
+            return Err(AppError::internal(
+                "SUPER_ADMIN_USER_ID must reference an active user with a verified primary email",
+            ));
         }
         let mut tx = state.db.begin().await?;
         sqlx::query("DELETE FROM role_assignments WHERE role = 'super_admin' AND user_id <> $1")

@@ -11,21 +11,27 @@ if [[ $# -ne 1 || ! "$1" =~ ^ghcr\.io/vantanminh/knotree-auth@sha256:[a-f0-9]{64
 fi
 image="$1"
 
-for command_name in k3s python3 grep; do
+for command_name in python3 grep; do
   command -v "$command_name" >/dev/null || {
     printf 'missing required command: %s\n' "$command_name" >&2
     exit 1
   }
 done
-encryption_status="$(k3s secrets-encrypt status)" || {
-  printf 'Could not check k3s secrets encryption status.\n' >&2
-  exit 1
-}
-grep -qx 'Encryption Status: Enabled' <<< "$encryption_status" && \
-  grep -qx 'Current Rotation Stage: reencrypt_finished' <<< "$encryption_status" || {
-    printf 'Enable and finish k3s Secret encryption before deploying this production workload.\n' >&2
+if [[ "$KUBECONFIG" == "/etc/rancher/k3s/k3s.yaml" ]]; then
+  command -v k3s >/dev/null || {
+    printf 'missing required command: k3s\n' >&2
     exit 1
   }
+  encryption_status="$(k3s secrets-encrypt status)" || {
+    printf 'Could not check k3s secrets encryption status.\n' >&2
+    exit 1
+  }
+  grep -qx 'Encryption Status: Enabled' <<< "$encryption_status" && \
+    grep -qx 'Current Rotation Stage: reencrypt_finished' <<< "$encryption_status" || {
+      printf 'Enable and finish k3s Secret encryption before deploying this production workload.\n' >&2
+      exit 1
+    }
+fi
 kube() {
   k3s kubectl "$@"
 }
@@ -74,13 +80,16 @@ print("\n".join(ready))
 printf 'Schedulable Ready node(s): %s\n' "$(printf '%s' "$ready_nodes" | tr '\n' ' ')"
 
 test -n "${CI_RUNTIME_CHECKSUM:?Run deployment through GitHub CI runtime provisioning}"
+test -s "${CI_RUNTIME_PAYLOAD:?Run deployment through GitHub CI runtime provisioning}"
+tmp="$(mktemp -d -t knotree-accounts-deploy.XXXXXX)"
+trap 'rm -rf "$tmp"' EXIT
+python3 "$script_dir/../ci/runtime.py" render-postgres "$CI_RUNTIME_PAYLOAD" \
+  "$script_dir/postgres.yaml" "$tmp/postgres.yaml"
 kube apply -f "$script_dir/network-policy.yaml" >/dev/null
-kube apply -f "$script_dir/postgres.yaml" >/dev/null
+kube apply -f "$tmp/postgres.yaml" >/dev/null
 kube apply -f "$script_dir/availability.yaml" >/dev/null
 kube apply -f "$script_dir/backup.yaml" >/dev/null
 
-tmp="$(mktemp -d -t knotree-accounts-deploy.XXXXXX)"
-trap 'rm -rf "$tmp"' EXIT
 python3 - "$script_dir/api.yaml" "$tmp/api.yaml" "$image" <<'PY'
 from pathlib import Path
 import sys

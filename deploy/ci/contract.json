@@ -21,6 +21,8 @@
     "TOTP_ENCRYPTION_KEY_VERSION",
     "LOG_FORMAT",
     "PUBLIC_API_ORIGIN",
+    "POSTGRES_USER",
+    "POSTGRES_DB",
     "SESSION_TTL_HOURS",
     "SESSION_IDLE_HOURS",
     "ADMIN_SESSION_HOURS",
@@ -81,6 +83,22 @@
     "APP_BASE_URL",
     "PUBLIC_API_ORIGIN"
   ],
+  "database_identity": {
+    "user": "POSTGRES_USER",
+    "database": "POSTGRES_DB"
+  },
+  "uuid_config": [
+    "SUPER_ADMIN_USER_ID"
+  ],
+  "preserve_statefulset_env": {
+    "name": "postgres",
+    "container": "postgres",
+    "required": false,
+    "values": {
+      "POSTGRES_USER": "POSTGRES_USER",
+      "POSTGRES_DB": "POSTGRES_DB"
+    }
+  },
   "extra_secrets": [
     {
       "name": "postgres-ca",

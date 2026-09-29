@@ -404,6 +404,64 @@ async fn identity_platform_flows() {
     let _ = refresh;
 }
 
+#[tokio::test]
+async fn configured_super_admin_must_be_verified_before_existing_admin_is_replaced() {
+    let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let db_url = std::env::var("TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://knotree:knotree@127.0.0.1/knotree_accounts_test".into());
+    let verified_id = uuid::Uuid::now_v7();
+    let mut verified_config = for_tests(&db_url).expect("test config");
+    verified_config.super_admin_user_id = Some(verified_id);
+    let verified_state = connect(verified_config).await.expect("database");
+    sqlx::query("TRUNCATE users RESTART IDENTITY CASCADE")
+        .execute(&verified_state.db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO users (id,status,created_at,updated_at,password_changed_at) VALUES ($1,'active',now(),now(),now())")
+        .bind(verified_id)
+        .execute(&verified_state.db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO user_emails (id,user_id,email,is_primary,verified_at,created_at) VALUES ($1,$2,$3,TRUE,now(),now())")
+        .bind(uuid::Uuid::now_v7())
+        .bind(verified_id)
+        .bind(format!("verified-{}@example.com", uuid_suffix()))
+        .execute(&verified_state.db)
+        .await
+        .unwrap();
+    knotree_accounts::auth::bootstrap_admin(&verified_state)
+        .await
+        .expect("verified active user becomes administrator");
+
+    let unverified_id = uuid::Uuid::now_v7();
+    sqlx::query("INSERT INTO users (id,status,created_at,updated_at,password_changed_at) VALUES ($1,'active',now(),now(),now())")
+        .bind(unverified_id)
+        .execute(&verified_state.db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO user_emails (id,user_id,email,is_primary,created_at) VALUES ($1,$2,$3,TRUE,now())")
+        .bind(uuid::Uuid::now_v7())
+        .bind(unverified_id)
+        .bind(format!("unverified-{}@example.com", uuid_suffix()))
+        .execute(&verified_state.db)
+        .await
+        .unwrap();
+    let mut unverified_config = for_tests(&db_url).expect("test config");
+    unverified_config.super_admin_user_id = Some(unverified_id);
+    let unverified_state = connect(unverified_config).await.expect("database");
+    assert!(knotree_accounts::auth::bootstrap_admin(&unverified_state)
+        .await
+        .is_err());
+
+    let admins: Vec<uuid::Uuid> = sqlx::query_scalar(
+        "SELECT user_id FROM role_assignments WHERE role = 'super_admin'",
+    )
+    .fetch_all(&verified_state.db)
+    .await
+    .unwrap();
+    assert_eq!(admins, vec![verified_id]);
+}
+
 struct Response {
     status: StatusCode,
     text: String,

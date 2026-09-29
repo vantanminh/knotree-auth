@@ -18,7 +18,9 @@ class DeploymentContractTests(unittest.TestCase):
         for key, length in self.contract.get("min_length", {}).items():
             self.secrets[key] = "x" * length
         if "POSTGRES_PASSWORD" in self.secrets:
-            self.secrets["DATABASE_URL"] = "postgres://test:test-only-value@postgres/test"
+            user = self.config[self.contract["database_identity"]["user"]]
+            database = self.config[self.contract["database_identity"]["database"]]
+            self.secrets["DATABASE_URL"] = f"postgres://{user}:test-only-value@postgres/{database}"
         if "DATABASE_CREDENTIALS_ENCRYPTION_KEY" in self.secrets:
             self.secrets["DATABASE_CREDENTIALS_ENCRYPTION_KEY"] = base64.urlsafe_b64encode(b"x" * 32).decode()
 
@@ -35,7 +37,7 @@ class DeploymentContractTests(unittest.TestCase):
         if not self.contract.get("external_secrets"):
             return
         supplied = {k: v for k, v in self.secrets.items() if k not in self.contract["external_secrets"]}
-        env = {"SSH_HOST": "example.com", "SSH_USER": "deploy", "SSH_PRIVATE_KEY": "test", "SSH_KNOWN_HOSTS": "test", "K8S_CONFIG_JSON": json.dumps(self.config), "K8S_SECRETS_JSON": json.dumps(supplied)}
+        env = {"KUBE_CONFIG": "server: https://15.235.210.66:6443\ntoken: test\n", "K8S_CONFIG_JSON": json.dumps(self.config), "K8S_SECRETS_JSON": json.dumps(supplied)}
         with patch.dict(os.environ, env, clear=True), patch("sys.argv", ["runtime.py", "prepare", "/tmp/must-not-be-created"]):
             with self.assertRaisesRegex(runtime.Invalid, "KNOTREE_REGISTRY_WEBHOOK_SECRET"):
                 runtime.main()
@@ -71,6 +73,23 @@ class DeploymentContractTests(unittest.TestCase):
         secrets = {**self.secrets, "DATABASE_URL": "postgres://test:wrong@postgres/test"}
         with self.assertRaises(runtime.Invalid):
             runtime.validate(self.contract, self.config, secrets)
+
+    def test_database_identity_mismatch_is_rejected(self):
+        secrets = {**self.secrets, "DATABASE_URL": "postgres://other:test-only-value@postgres/other"}
+        with self.assertRaisesRegex(runtime.Invalid, "POSTGRES_USER and POSTGRES_DB"):
+            runtime.validate(self.contract, self.config, secrets)
+
+    def test_invalid_optional_super_admin_uuid_is_rejected(self):
+        config = {**self.config, "SUPER_ADMIN_USER_ID": "not-a-uuid"}
+        with self.assertRaisesRegex(runtime.Invalid, "SUPER_ADMIN_USER_ID"):
+            runtime.validate(self.contract, config, self.secrets)
+
+    def test_render_postgres_uses_github_runtime_identity(self):
+        source = (Path(__file__).parent.parent / "k8s" / "postgres.yaml").read_text()
+        rendered = source.replace("__KNOTREE_POSTGRES_USER__", self.config["POSTGRES_USER"])
+        rendered = rendered.replace("__KNOTREE_POSTGRES_DB__", self.config["POSTGRES_DB"])
+        self.assertIn(f"value: {self.config['POSTGRES_USER']}", rendered)
+        self.assertIn(f"value: {self.config['POSTGRES_DB']}", rendered)
 
     def test_existing_key_mismatch_prevents_all_mutations(self):
         objects = runtime.manifests(self.contract, self.config, self.secrets)
