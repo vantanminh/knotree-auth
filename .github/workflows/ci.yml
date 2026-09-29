@@ -24,7 +24,8 @@ jobs:
         r=json.load(open(sys.argv[1]))["config"]
         w=json.load(open(sys.argv[2]))
         assert json.load(open(sys.argv[1]))["secrets"]["CLOUDFLARE_ACCOUNT_ID"] == __import__("os").environ["CLOUDFLARE_ACCOUNT_ID"], "Email and Worker accounts differ"
-        assert r["APP_BASE_URL"] == "https://"+w["routes"][0]["pattern"], "Worker and Accounts public URL differ"
+        pattern=w["routes"][0]["pattern"].removesuffix("/*")
+        assert r["APP_BASE_URL"] == "https://"+pattern, "Worker and Accounts public URL differ"
         assert r["PUBLIC_API_ORIGIN"] == w["vars"]["API_ORIGIN"], "Worker API origin differs"
         PY
   backend:
