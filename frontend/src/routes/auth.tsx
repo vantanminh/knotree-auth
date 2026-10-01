@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
-import { AuthShell } from "../components/shells";
-import { Alert, Button, TextField } from "../components/ui";
+import { Navigate, useNavigate, useSearchParams } from "react-router";
+import { AuthHeading, AuthShell, TextLink } from "../components/shells";
+import { AlertIcon, CheckCircleIcon, GitHubLogo, GoogleLogo, KeyIcon, MailIcon } from "../components/icons";
+import { Alert, Button, PasswordStrength, Spinner, TextField, buttonClass, useCountdown } from "../components/ui";
 import { ApiError, api, continueAfterAuth, destinationAfterAuth, safeReturnTo } from "../lib/api";
 import type { LoginResponse } from "../lib/types";
 
@@ -12,9 +13,12 @@ function useReturnTo() {
 
 function CheckingSession() {
   return (
-    <AuthShell>
-      <p className="text-sm text-muted">Checking your session…</p>
-    </AuthShell>
+    <div className="flex min-h-dvh items-center justify-center">
+      <p role="status" className="flex items-center gap-2.5 text-sm text-muted">
+        <Spinner size={16} className="text-pine" />
+        Checking your session…
+      </p>
+    </div>
   );
 }
 
@@ -43,6 +47,33 @@ function useResumeSession(returnTo: string | null) {
   }, [navigate, returnTo]);
 
   return status;
+}
+
+function Divider({ children }: { children: string }) {
+  return (
+    <div className="my-6 flex items-center gap-3 text-[12px] uppercase tracking-[0.08em] text-faint">
+      <span className="h-px flex-1 bg-line" />
+      {children}
+      <span className="h-px flex-1 bg-line" />
+    </div>
+  );
+}
+
+function SocialButtons({ returnTo }: { returnTo: string | null }) {
+  const social = (provider: string) =>
+    `/api/v1/auth/social/${provider}/start?return_to=${encodeURIComponent(returnTo ?? "/account")}`;
+  return (
+    <div className="grid grid-cols-2 gap-2.5">
+      <a className={buttonClass("secondary", "md", "w-full")} href={social("google")}>
+        <GoogleLogo size={16} />
+        Google
+      </a>
+      <a className={buttonClass("secondary", "md", "w-full")} href={social("github")}>
+        <GitHubLogo size={16} />
+        GitHub
+      </a>
+    </div>
+  );
 }
 
 export function HomePage() {
@@ -77,10 +108,7 @@ export function SignInPage() {
         body: JSON.stringify({ email, password }),
       });
       if (result.status === "mfa_required") {
-        sessionStorage.setItem(
-          "knotree.mfa",
-          JSON.stringify({ ...result, return_to: returnTo }),
-        );
+        sessionStorage.setItem("knotree.mfa", JSON.stringify({ ...result, return_to: returnTo }));
         const method = result.methods.includes("totp") ? "totp" : result.methods[0];
         window.location.assign(`/mfa/${method === "email" ? "email" : method === "totp" ? "totp" : "recovery"}`);
         return;
@@ -93,22 +121,45 @@ export function SignInPage() {
     }
   }
 
-  const social = (provider: string) =>
-    `/api/v1/auth/social/${provider}/start?return_to=${encodeURIComponent(returnTo ?? "/account")}`;
-
   if (session === "checking") return <CheckingSession />;
 
   return (
-    <AuthShell>
-      <h1 className="text-[22px] font-medium tracking-tight">Sign in</h1>
-      <p className="mt-1 mb-6 text-sm text-muted">
-        {clientName ? `Sign in to continue to ${clientName}` : "Use your Knotree account."}
-      </p>
+    <AuthShell
+      footer={
+        <>
+          New to Knotree? <TextLink to="/sign-up">Create account</TextLink>
+        </>
+      }
+    >
+      <AuthHeading title="Sign in">
+        {clientName ? (
+          <>
+            to continue to <span className="font-medium text-ink">{clientName}</span>
+          </>
+        ) : (
+          "Use your Knotree account."
+        )}
+      </AuthHeading>
       <form className="grid gap-4" onSubmit={submit}>
         {error ? <Alert>{error}</Alert> : null}
-        <TextField label="Email" name="email" type="email" autoComplete="username" required value={email} onChange={setEmail} />
+        <TextField
+          label="Email"
+          name="email"
+          type="email"
+          autoComplete="username"
+          placeholder="you@example.com"
+          required
+          autoFocus
+          value={email}
+          onChange={setEmail}
+        />
         <TextField
           label="Password"
+          labelAside={
+            <TextLink to="/forgot-password" className="font-normal">
+              Forgot password?
+            </TextLink>
+          }
           name="password"
           type="password"
           autoComplete="current-password"
@@ -116,34 +167,12 @@ export function SignInPage() {
           value={password}
           onChange={setPassword}
         />
-        <Button type="submit" pending={pending} className="w-full">
+        <Button type="submit" size="lg" pending={pending} className="mt-1 w-full">
           {pending ? "Signing in…" : "Continue"}
         </Button>
       </form>
-      <p className="mt-3 text-sm">
-        <Link className="text-ink underline decoration-line underline-offset-2" to="/forgot-password">
-          Forgot password?
-        </Link>
-      </p>
-      <div className="my-5 flex items-center gap-3 text-xs text-muted">
-        <span className="h-px flex-1 bg-line" />
-        or
-        <span className="h-px flex-1 bg-line" />
-      </div>
-      <div className="grid gap-2">
-        <a className="inline-flex h-10 items-center justify-center rounded-[6px] border border-line bg-surface text-sm" href={social("google")}>
-          Continue with Google
-        </a>
-        <a className="inline-flex h-10 items-center justify-center rounded-[6px] border border-line bg-surface text-sm" href={social("github")}>
-          Continue with GitHub
-        </a>
-      </div>
-      <p className="mt-6 text-sm text-muted">
-        New to Knotree?{" "}
-        <Link className="text-ink underline decoration-line underline-offset-2" to="/sign-up">
-          Create account
-        </Link>
-      </p>
+      <Divider>or</Divider>
+      <SocialButtons returnTo={returnTo} />
     </AuthShell>
   );
 }
@@ -156,6 +185,7 @@ export function SignUpPage() {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const navigate = useNavigate();
+  const mismatch = confirm.length > 0 && password !== confirm;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -182,22 +212,39 @@ export function SignUpPage() {
   if (session === "checking") return <CheckingSession />;
 
   return (
-    <AuthShell>
-      <h1 className="text-[22px] font-medium tracking-tight">Create account</h1>
-      <p className="mt-1 mb-6 text-sm text-muted">One Knotree account works across Knotree services.</p>
+    <AuthShell
+      footer={
+        <>
+          Already have an account? <TextLink to="/sign-in">Sign in</TextLink>
+        </>
+      }
+    >
+      <AuthHeading title="Create account">One Knotree account works across Knotree services.</AuthHeading>
       <form className="grid gap-4" onSubmit={submit}>
         {error ? <Alert>{error}</Alert> : null}
-        <TextField label="Email" name="email" type="email" autoComplete="email" required value={email} onChange={setEmail} />
         <TextField
-          label="Password"
-          name="password"
-          type="password"
-          autoComplete="new-password"
+          label="Email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          placeholder="you@example.com"
           required
-          value={password}
-          onChange={setPassword}
-          hint="At least 10 characters."
+          autoFocus
+          value={email}
+          onChange={setEmail}
         />
+        <div className="grid gap-2">
+          <TextField
+            label="Password"
+            name="password"
+            type="password"
+            autoComplete="new-password"
+            required
+            value={password}
+            onChange={setPassword}
+          />
+          <PasswordStrength value={password} />
+        </div>
         <TextField
           label="Confirm password"
           name="confirm"
@@ -206,17 +253,14 @@ export function SignUpPage() {
           required
           value={confirm}
           onChange={setConfirm}
+          error={mismatch ? "Passwords do not match." : undefined}
         />
-        <Button type="submit" pending={pending} className="w-full">
+        <Button type="submit" size="lg" pending={pending} className="mt-1 w-full">
           {pending ? "Creating account…" : "Create account"}
         </Button>
       </form>
-      <p className="mt-6 text-sm text-muted">
-        Already have an account?{" "}
-        <Link className="text-ink underline decoration-line underline-offset-2" to="/sign-in">
-          Sign in
-        </Link>
-      </p>
+      <Divider>or sign up with</Divider>
+      <SocialButtons returnTo={null} />
     </AuthShell>
   );
 }
@@ -224,24 +268,22 @@ export function SignUpPage() {
 export function VerifyEmailPage() {
   const [params] = useSearchParams();
   const token = params.get("token") ?? "";
-  const [message, setMessage] = useState(token ? "Verifying your email…" : "Check your inbox for a verification link.");
+  const [state, setState] = useState<"waiting" | "verifying" | "verified" | "failed">(token ? "verifying" : "waiting");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [email, setEmail] = useState(sessionStorage.getItem("knotree.pending-email") ?? "");
   const [pending, setPending] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
+  const [cooldown, setCooldown] = useCountdown();
 
   useEffect(() => {
     if (!token) return;
     void api("/api/v1/auth/email/verify", { method: "POST", body: JSON.stringify({ token }) })
-      .then(() => setMessage("Email verified. You can sign in."))
-      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : "This link is not valid."));
+      .then(() => setState("verified"))
+      .catch((err: unknown) => {
+        setState("failed");
+        setError(err instanceof ApiError ? err.message : "This link is not valid.");
+      });
   }, [token]);
-
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const timer = window.setTimeout(() => setCooldown((value) => value - 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [cooldown]);
 
   async function resend(event: React.FormEvent) {
     event.preventDefault();
@@ -249,7 +291,7 @@ export function VerifyEmailPage() {
     setError("");
     try {
       await api("/api/v1/auth/email/resend", { method: "POST", body: JSON.stringify({ email }) });
-      setMessage("If an unverified account exists for this email, we sent a new link.");
+      setNotice("If an unverified account exists for this email, we sent a new link.");
       setCooldown(30);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not resend the email.");
@@ -258,23 +300,76 @@ export function VerifyEmailPage() {
     }
   }
 
-  return (
-    <AuthShell>
-      <h1 className="text-[22px] font-medium tracking-tight">Verify your email</h1>
-      <p className="mt-2 mb-6 text-sm text-muted">{message}</p>
-      {error ? <Alert>{error}</Alert> : null}
-      {token ? (
-        <Link className="mt-4 inline-block text-sm underline" to="/sign-in">
+  if (state === "verifying") {
+    return (
+      <AuthShell>
+        <AuthHeading icon={<Spinner size={18} />} title="Verify your email">
+          Verifying your email…
+        </AuthHeading>
+      </AuthShell>
+    );
+  }
+
+  if (state === "verified") {
+    return (
+      <AuthShell>
+        <AuthHeading icon={<CheckCircleIcon size={20} />} title="Verify your email">
+          Email verified. You can sign in.
+        </AuthHeading>
+        <a href="/sign-in" className={buttonClass("primary", "lg", "w-full")}>
           Continue to sign in
-        </Link>
-      ) : (
-        <form className="mt-4 grid gap-4" onSubmit={resend}>
-          <TextField label="Email" name="email" type="email" required value={email} onChange={setEmail} />
-          <Button type="submit" pending={pending || cooldown > 0} className="w-full">
-            {cooldown > 0 ? `Resend in ${cooldown}s` : pending ? "Sending…" : "Resend verification email"}
-          </Button>
-        </form>
-      )}
+        </a>
+      </AuthShell>
+    );
+  }
+
+  if (state === "failed") {
+    return (
+      <AuthShell
+        footer={
+          <>
+            Need a new link? <TextLink to="/verify-email">Resend verification</TextLink>
+          </>
+        }
+      >
+        <AuthHeading icon={<AlertIcon size={20} />} title="Verify your email">
+          We couldn’t verify this link.
+        </AuthHeading>
+        <Alert>{error}</Alert>
+        <a href="/sign-in" className={buttonClass("secondary", "lg", "mt-5 w-full")}>
+          Back to sign in
+        </a>
+      </AuthShell>
+    );
+  }
+
+  return (
+    <AuthShell
+      footer={
+        <>
+          Already verified? <TextLink to="/sign-in">Sign in</TextLink>
+        </>
+      }
+    >
+      <AuthHeading icon={<MailIcon size={20} />} title="Verify your email">
+        {email ? (
+          <>
+            We sent a verification link to <span className="font-medium text-ink">{email}</span>. Open it to activate
+            your account.
+          </>
+        ) : (
+          "Check your inbox for a verification link."
+        )}
+      </AuthHeading>
+      <form className="grid gap-4" onSubmit={resend}>
+        {error ? <Alert>{error}</Alert> : null}
+        {notice ? <Alert tone="success">{notice}</Alert> : null}
+        <TextField label="Email" name="email" type="email" required value={email} onChange={setEmail} />
+        <Button type="submit" variant="secondary" size="lg" pending={pending} disabled={cooldown > 0} className="w-full">
+          {cooldown > 0 ? `Resend in ${cooldown}s` : pending ? "Sending…" : "Resend verification email"}
+        </Button>
+      </form>
+      <p className="mt-5 text-[13px] text-muted">Can’t find it? Check spam or promotions. Links expire after a while.</p>
     </AuthShell>
   );
 }
@@ -303,22 +398,46 @@ export function ForgotPasswordPage() {
   }
 
   return (
-    <AuthShell>
-      <h1 className="text-[22px] font-medium tracking-tight">Reset password</h1>
-      <p className="mt-1 mb-6 text-sm text-muted">We’ll email a link if an account exists for this address.</p>
-      <form className="grid gap-4" onSubmit={submit}>
-        {error ? <Alert>{error}</Alert> : null}
-        {message ? <p className="text-sm">{message}</p> : null}
-        <TextField label="Email" name="email" type="email" autoComplete="email" required value={email} onChange={setEmail} />
-        <Button type="submit" pending={pending} className="w-full">
-          {pending ? "Sending…" : "Send reset link"}
-        </Button>
-      </form>
-      <p className="mt-6 text-sm">
-        <Link className="underline" to="/sign-in">
-          Back to sign in
-        </Link>
-      </p>
+    <AuthShell
+      footer={
+        <>
+          Remembered it? <TextLink to="/sign-in">Back to sign in</TextLink>
+        </>
+      }
+    >
+      {message ? (
+        <>
+          <AuthHeading icon={<MailIcon size={20} />} title="Check your email">
+            {message}
+          </AuthHeading>
+          <Button type="button" variant="secondary" size="lg" className="w-full" onClick={() => setMessage("")}>
+            Use a different email
+          </Button>
+        </>
+      ) : (
+        <>
+          <AuthHeading icon={<KeyIcon size={20} />} title="Reset password">
+            We’ll email a link if an account exists for this address.
+          </AuthHeading>
+          <form className="grid gap-4" onSubmit={submit}>
+            {error ? <Alert>{error}</Alert> : null}
+            <TextField
+              label="Email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              required
+              autoFocus
+              value={email}
+              onChange={setEmail}
+            />
+            <Button type="submit" size="lg" pending={pending} className="w-full">
+              {pending ? "Sending…" : "Send reset link"}
+            </Button>
+          </form>
+        </>
+      )}
     </AuthShell>
   );
 }
@@ -348,33 +467,49 @@ export function ResetPasswordPage() {
     }
   }
 
+  if (done) {
+    return (
+      <AuthShell>
+        <AuthHeading icon={<CheckCircleIcon size={20} />} title="Password updated">
+          Your new password is set. Existing sessions were signed out.
+        </AuthHeading>
+        <a href="/sign-in" className={buttonClass("primary", "lg", "w-full")}>
+          Sign in
+        </a>
+      </AuthShell>
+    );
+  }
+
   return (
-    <AuthShell>
-      <h1 className="text-[22px] font-medium tracking-tight">Choose a new password</h1>
-      {done ? (
-        <p className="mt-4 text-sm">
-          Password updated. Existing sessions were signed out.{" "}
-          <Link className="underline" to="/sign-in">
-            Sign in
-          </Link>
-        </p>
-      ) : (
-        <form className="mt-6 grid gap-4" onSubmit={submit}>
-          {error ? <Alert>{error}</Alert> : null}
+    <AuthShell
+      footer={
+        <>
+          <TextLink to="/sign-in">Back to sign in</TextLink>
+        </>
+      }
+    >
+      <AuthHeading icon={<KeyIcon size={20} />} title="Choose a new password">
+        Pick something you don’t use anywhere else.
+      </AuthHeading>
+      <form className="grid gap-4" onSubmit={submit}>
+        {error ? <Alert>{error}</Alert> : null}
+        <div className="grid gap-2">
           <TextField
             label="New password"
             name="password"
             type="password"
             autoComplete="new-password"
             required
+            autoFocus
             value={password}
             onChange={setPassword}
           />
-          <Button type="submit" pending={pending} className="w-full">
-            {pending ? "Updating…" : "Update password"}
-          </Button>
-        </form>
-      )}
+          <PasswordStrength value={password} />
+        </div>
+        <Button type="submit" size="lg" pending={pending} className="w-full">
+          {pending ? "Updating…" : "Update password"}
+        </Button>
+      </form>
     </AuthShell>
   );
 }
