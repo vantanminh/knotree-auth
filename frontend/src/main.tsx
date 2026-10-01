@@ -10,7 +10,7 @@ import {
   SessionsPage,
   AuthorizedAppsPage,
 } from "./routes/account";
-import { AdminAnalytics, AdminLogs, AdminOverview, AdminSecurity, AdminUser, AdminUsers } from "./routes/admin";
+import { AdminAnalytics, AdminClient, AdminClients, AdminLogs, AdminOverview, AdminSecurity, AdminUser, AdminUsers } from "./routes/admin";
 import { ForgotPasswordPage, HomePage, ResetPasswordPage, SignInPage, SignUpPage, VerifyEmailPage } from "./routes/auth";
 import { MfaPage } from "./routes/mfa";
 import { ConsentPage, OAuthErrorPage } from "./routes/oauth";
@@ -50,6 +50,8 @@ const router = createBrowserRouter([
       { path: "analytics", element: <AdminAnalytics /> },
       { path: "users", element: <AdminUsers /> },
       { path: "users/:id", element: <AdminUser /> },
+      { path: "clients", element: <AdminClients /> },
+      { path: "clients/:id", element: <AdminClient /> },
       { path: "security", element: <AdminSecurity /> },
       { path: "logs", element: <AdminLogs /> },
     ],

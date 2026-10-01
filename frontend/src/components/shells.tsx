@@ -326,6 +326,7 @@ const adminNav: NavItem[] = [
   { to: "/admin", label: "Overview", icon: <ChartIcon />, end: true },
   { to: "/admin/analytics", label: "Analytics", icon: <ActivityIcon /> },
   { to: "/admin/users", label: "Users", icon: <UsersIcon /> },
+  { to: "/admin/clients", label: "Services", icon: <AppIcon /> },
   { to: "/admin/security", label: "Security events", icon: <ActivityIcon /> },
   { to: "/admin/logs", label: "Email logs", icon: <MailIcon /> },
 ];

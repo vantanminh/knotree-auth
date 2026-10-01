@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ActivityList } from "./account";
 import {
+  AppIcon,
   ArrowLeftIcon,
   BanIcon,
   ChartIcon,
@@ -75,6 +76,26 @@ type UserDetail = {
   active_sessions?: number;
   mfa?: MfaSummary;
   security_events?: SecurityEvent[];
+};
+
+type ClientRow = {
+  id: string;
+  name: string;
+  client_type: "public" | "confidential" | "service";
+  status: string;
+  first_party: boolean;
+  require_pkce: boolean;
+  allowed_scopes: string[];
+  redirect_uris: string[];
+  has_secret: boolean;
+  created_at: string;
+  authorized_users: number;
+  active_tokens: number;
+  last_authorized_at: string | null;
+};
+
+type ClientDetail = ClientRow & {
+  recent_consents: { user_id: string; email: string | null; scopes: string[]; granted_at: string }[];
 };
 
 const numberFormat = { format: (value: number) => new Intl.NumberFormat(intlLocale()).format(value) };
@@ -614,6 +635,225 @@ export function AdminUser() {
         danger={confirm?.danger}
         onConfirm={() => (confirm ? act(confirm) : undefined)}
       />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Services (OAuth clients)                                            */
+/* ------------------------------------------------------------------ */
+
+function clientTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    public: "Public",
+    confidential: "Confidential",
+    service: "Service",
+  };
+  const label = labels[type];
+  return label ? t(label) : type;
+}
+
+export function AdminClients() {
+  const navigate = useNavigate();
+  const [q, setQ] = useState("");
+  const [items, setItems] = useState<ClientRow[] | null>(null);
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+
+  async function search(event?: React.FormEvent) {
+    event?.preventDefault();
+    setPending(true);
+    setError("");
+    try {
+      const body = await api<{ items: ClientRow[] }>(`/api/v1/admin/clients?q=${encodeURIComponent(q)}`);
+      setItems(body.items);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("Could not load services."));
+      setItems((current) => current ?? []);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  useEffect(() => {
+    void search();
+  }, []);
+
+  return (
+    <div className="grid gap-6">
+      <PageTitle title={t("Services")} detail={t("Every service registered to sign users in with this account system.")} />
+      {error ? <Alert>{error}</Alert> : null}
+      <Card>
+        <form className="flex gap-2 border-b border-line p-3 sm:p-4" onSubmit={search}>
+          <SearchBar label={t("Search")} value={q} onChange={setQ} placeholder={t("Client ID or name")} />
+          <Button type="submit" pending={pending}>
+            {t("Search")}
+          </Button>
+        </form>
+        {!items ? (
+          <TableSkeleton />
+        ) : items.length === 0 ? (
+          <EmptyState icon={<AppIcon />} title={t("No services match")}>
+            {t("Try a different client ID or name.")}
+          </EmptyState>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[680px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-line bg-paper/70 text-[12px] uppercase tracking-[0.06em] text-muted">
+                  <th className="px-5 py-2.5 font-medium">{t("Service")}</th>
+                  <th className="px-3 py-2.5 font-medium">{t("Status")}</th>
+                  <th className="px-3 py-2.5 font-medium">{t("Type")}</th>
+                  <th className="px-3 py-2.5 text-right font-medium">{t("Authorized users")}</th>
+                  <th className="px-3 py-2.5 font-medium">{t("Last authorized")}</th>
+                  <th className="w-10" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {items.map((client) => (
+                  <tr
+                    key={client.id}
+                    className="group cursor-pointer transition-colors hover:bg-paper/80"
+                    onClick={() => navigate(`/admin/clients/${encodeURIComponent(client.id)}`)}
+                  >
+                    <td className="px-5 py-3">
+                      <div className="min-w-0">
+                        <Link
+                          className="block truncate font-medium text-ink hover:underline"
+                          to={`/admin/clients/${encodeURIComponent(client.id)}`}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {client.name}
+                        </Link>
+                        <code className="font-mono text-[12.5px] text-muted">{client.id}</code>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <StatusBadge status={client.status} />
+                    </td>
+                    <td className="px-3 py-3">
+                      <span className="flex flex-wrap gap-1.5">
+                        <Badge tone="outline">{clientTypeLabel(client.client_type)}</Badge>
+                        {client.first_party ? <Badge tone="neutral">{t("First-party")}</Badge> : null}
+                      </span>
+                    </td>
+                    <td className="tabular px-3 py-3 text-right text-ink">{numberFormat.format(client.authorized_users)}</td>
+                    <td className="tabular px-3 py-3 text-muted" title={formatWhen(client.last_authorized_at)}>
+                      {client.last_authorized_at ? formatRelative(client.last_authorized_at) : t("Never")}
+                    </td>
+                    <td className="pr-4 text-faint">
+                      <ChevronRightIcon className="transition-transform group-hover:translate-x-0.5" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+export function AdminClient() {
+  const { id = "" } = useParams();
+  const [client, setClient] = useState<ClientDetail | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api<ClientDetail>(`/api/v1/admin/clients/${encodeURIComponent(id)}`)
+      .then(setClient)
+      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : t("Could not load this service.")));
+  }, [id]);
+
+  if (error) return <Alert>{error}</Alert>;
+  if (!client) return <PageSkeleton label={t("Loading service…")} />;
+
+  return (
+    <div className="grid gap-6">
+      <Link to="/admin/clients" className="inline-flex w-fit items-center gap-1.5 text-[13px] font-medium text-muted transition-colors hover:text-ink">
+        <ArrowLeftIcon size={14} />
+        {t("All services")}
+      </Link>
+      <header className="min-w-0">
+        <h1 className="truncate text-[24px] font-semibold leading-tight tracking-[-0.015em] text-ink">{client.name}</h1>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <StatusBadge status={client.status} />
+          <Badge tone="outline">{clientTypeLabel(client.client_type)}</Badge>
+          {client.first_party ? <Badge tone="neutral">{t("First-party")}</Badge> : null}
+        </div>
+      </header>
+
+      <Card>
+        <CardHeader title={t("Details")} />
+        <dl className="mt-4 divide-y divide-line border-t border-line">
+          <Detail label={t("Client ID")}>
+            <span className="flex flex-wrap items-center gap-2">
+              <code className="break-all font-mono text-[13px]">{client.id}</code>
+              <CopyButton value={client.id} />
+            </span>
+          </Detail>
+          <Detail label={t("Created")}>{formatWhen(client.created_at)}</Detail>
+          <Detail label={t("PKCE required")}>{client.require_pkce ? t("Yes") : t("No")}</Detail>
+          <Detail label={t("Client secret")}>{client.has_secret ? t("Configured") : t("None")}</Detail>
+          <Detail label={t("Authorized users")}>
+            <span className="tabular">{numberFormat.format(client.authorized_users)}</span>
+          </Detail>
+          <Detail label={t("Active access tokens")}>
+            <span className="tabular">{numberFormat.format(client.active_tokens)}</span>
+          </Detail>
+          <Detail label={t("Last authorized")}>{formatWhen(client.last_authorized_at)}</Detail>
+          <Detail label={t("Allowed scopes")}>
+            <span className="flex flex-wrap gap-1.5">
+              {client.allowed_scopes.map((scope) => (
+                <Badge key={scope} tone="neutral">
+                  {scope}
+                </Badge>
+              ))}
+            </span>
+          </Detail>
+          <Detail label={t("Redirect URIs")}>
+            {client.redirect_uris.length ? (
+              <ul className="grid gap-1">
+                {client.redirect_uris.map((uri) => (
+                  <li key={uri}>
+                    <code className="break-all font-mono text-[13px]">{uri}</code>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <span className="text-muted">{t("None")}</span>
+            )}
+          </Detail>
+        </dl>
+      </Card>
+
+      <Card>
+        <CardHeader title={t("Recent authorizations")} description={t("The latest users who granted this service access.")} />
+        <div className="mt-4 border-t border-line">
+          {client.recent_consents.length === 0 ? (
+            <EmptyState icon={<UsersIcon />} title={t("No authorizations yet")}>
+              {t("No user has authorized this service.")}
+            </EmptyState>
+          ) : (
+            <ul className="divide-y divide-line">
+              {client.recent_consents.map((consent) => (
+                <li key={consent.user_id} className="flex flex-col gap-1 px-5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                  <div className="min-w-0">
+                    <Link className="block truncate text-sm font-medium text-ink hover:underline" to={`/admin/users/${consent.user_id}`}>
+                      {consent.email ?? consent.user_id}
+                    </Link>
+                    <span className="text-[12.5px] text-muted">{consent.scopes.join(" ")}</span>
+                  </div>
+                  <time className="tabular text-[12.5px] text-muted" dateTime={consent.granted_at} title={formatWhen(consent.granted_at)}>
+                    {formatRelative(consent.granted_at)}
+                  </time>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }

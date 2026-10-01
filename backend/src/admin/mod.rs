@@ -647,3 +647,135 @@ pub struct LogFilters {
     pub limit: i64,
     pub offset: i64,
 }
+
+pub struct ClientQuery {
+    pub q: Option<String>,
+    pub status: Option<String>,
+    pub client_type: Option<String>,
+}
+
+type ClientRow = (
+    String,
+    String,
+    String,
+    String,
+    bool,
+    bool,
+    Vec<String>,
+    Vec<String>,
+    bool,
+    DateTime<Utc>,
+    i64,
+    i64,
+    Option<DateTime<Utc>>,
+);
+
+/// Registered OAuth clients with usage counts. Never exposes `secret_hash`.
+async fn client_rows(
+    state: &AppState,
+    id: Option<&str>,
+    query: &ClientQuery,
+) -> AppResult<Vec<ClientRow>> {
+    let like = query
+        .q
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            format!(
+                "%{}%",
+                value
+                    .replace('\\', "\\\\")
+                    .replace('%', "\\%")
+                    .replace('_', "\\_")
+            )
+        });
+    let rows = sqlx::query_as(
+        r#"
+        SELECT c.id, c.name, c.client_type, c.status, c.first_party, c.require_pkce,
+               c.allowed_scopes, c.redirect_uris, c.secret_hash IS NOT NULL, c.created_at,
+               (SELECT COUNT(*) FROM oauth_consents oc WHERE oc.client_id = c.id),
+               (SELECT COUNT(*) FROM oauth_access_tokens t
+                   WHERE t.client_id = c.id AND t.revoked_at IS NULL AND t.expires_at > now()),
+               (SELECT MAX(occurred_at) FROM security_events s
+                   WHERE s.client_id = c.id AND s.event_type = 'OAUTH_AUTHORIZED')
+        FROM oauth_clients c
+        WHERE ($1::text IS NULL OR c.id = $1)
+          AND ($2::text IS NULL OR c.id ILIKE $2 ESCAPE '\' OR c.name ILIKE $2 ESCAPE '\')
+          AND ($3::text IS NULL OR c.status = $3)
+          AND ($4::text IS NULL OR c.client_type = $4)
+        ORDER BY c.first_party DESC, c.name, c.id
+        "#,
+    )
+    .bind(id)
+    .bind(like)
+    .bind(query.status.as_deref())
+    .bind(query.client_type.as_deref())
+    .fetch_all(&state.db)
+    .await?;
+    Ok(rows)
+}
+
+fn client_json(row: ClientRow) -> Value {
+    json!({
+        "id": row.0,
+        "name": row.1,
+        "client_type": row.2,
+        "status": row.3,
+        "first_party": row.4,
+        "require_pkce": row.5,
+        "allowed_scopes": row.6,
+        "redirect_uris": row.7,
+        "has_secret": row.8,
+        "created_at": row.9,
+        "authorized_users": row.10,
+        "active_tokens": row.11,
+        "last_authorized_at": row.12,
+    })
+}
+
+pub async fn list_clients(state: &AppState, query: ClientQuery) -> AppResult<Value> {
+    let items = client_rows(state, None, &query)
+        .await?
+        .into_iter()
+        .map(client_json)
+        .collect::<Vec<_>>();
+    Ok(json!({"items": items}))
+}
+
+pub async fn client_detail(state: &AppState, client_id: &str) -> AppResult<Value> {
+    let all = ClientQuery {
+        q: None,
+        status: None,
+        client_type: None,
+    };
+    let Some(row) = client_rows(state, Some(client_id), &all)
+        .await?
+        .into_iter()
+        .next()
+    else {
+        return Err(AppError::NotFound);
+    };
+    let recent: Vec<(Uuid, Option<String>, Vec<String>, DateTime<Utc>)> = sqlx::query_as(
+        r#"
+        SELECT oc.user_id, e.email, oc.scopes, oc.granted_at
+        FROM oauth_consents oc
+        LEFT JOIN user_emails e ON e.user_id = oc.user_id AND e.is_primary
+        WHERE oc.client_id = $1
+        ORDER BY oc.granted_at DESC
+        LIMIT 20
+        "#,
+    )
+    .bind(client_id)
+    .fetch_all(&state.db)
+    .await?;
+    let mut value = client_json(row);
+    value["recent_consents"] = recent
+        .into_iter()
+        .map(|(user_id, email, scopes, granted_at)| {
+            json!({"user_id": user_id, "email": email, "scopes": scopes, "granted_at": granted_at})
+        })
+        .collect::<Vec<_>>()
+        .into();
+    Ok(value)
+}
