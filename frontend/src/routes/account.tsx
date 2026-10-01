@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Alert, Button, PageTitle, TextField } from "../components/ui";
-import { ApiError, api } from "../lib/api";
+import { ApiError, api, signInLocation } from "../lib/api";
 import { eventLabel, formatWhen } from "../lib/format";
 import type { MfaSummary, Profile, SecurityEvent, SessionItem } from "../lib/types";
 
@@ -12,7 +12,7 @@ function useProfile() {
     void api<Profile>("/api/v1/me")
       .then(setProfile)
       .catch((err: unknown) => {
-        if (err instanceof ApiError && err.status === 401) window.location.assign("/sign-in");
+        if (err instanceof ApiError && err.status === 401) window.location.assign(signInLocation());
         else setError(err instanceof ApiError ? err.message : "Could not load your account.");
       });
   }, []);

@@ -10,13 +10,13 @@ import {
   SessionsPage,
 } from "./routes/account";
 import { AdminLogs, AdminOverview, AdminSecurity, AdminUser, AdminUsers } from "./routes/admin";
-import { ForgotPasswordPage, ResetPasswordPage, SignInPage, SignUpPage, VerifyEmailPage } from "./routes/auth";
+import { ForgotPasswordPage, HomePage, ResetPasswordPage, SignInPage, SignUpPage, VerifyEmailPage } from "./routes/auth";
 import { MfaPage } from "./routes/mfa";
 import { ConsentPage, OAuthErrorPage } from "./routes/oauth";
 import "./styles.css";
 
 const router = createBrowserRouter([
-  { path: "/", element: <Navigate to="/sign-in" replace /> },
+  { path: "/", element: <HomePage /> },
   { path: "/sign-in", element: <SignInPage /> },
   { path: "/sign-up", element: <SignUpPage /> },
   { path: "/verify-email", element: <VerifyEmailPage /> },

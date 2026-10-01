@@ -8,8 +8,9 @@ use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::http::HeaderMap;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
-use cookie::time::Duration as CookieDuration;
+use cookie::time::{Duration as CookieDuration, OffsetDateTime};
 use ipnetwork::IpNetwork;
+use std::cell::RefCell;
 use std::net::{IpAddr, SocketAddr};
 
 pub fn session_cookie_name(config: &AppConfig) -> &'static str {
@@ -36,6 +37,40 @@ pub fn social_cookie_name(config: &AppConfig) -> &'static str {
     }
 }
 
+pub struct CookieRenewal {
+    pub name: &'static str,
+    pub value: String,
+    pub max_age_secs: i64,
+}
+
+tokio::task_local! {
+    static COOKIE_RENEWAL: RefCell<Option<CookieRenewal>>;
+}
+
+pub async fn scope_cookie_renewal<F>(future: F) -> F::Output
+where
+    F: std::future::Future,
+{
+    COOKIE_RENEWAL.scope(RefCell::new(None), future).await
+}
+
+pub fn note_cookie_renewal(name: &'static str, value: impl Into<String>, max_age_secs: i64) {
+    let _ = COOKIE_RENEWAL.try_with(|slot| {
+        *slot.borrow_mut() = Some(CookieRenewal {
+            name,
+            value: value.into(),
+            max_age_secs,
+        });
+    });
+}
+
+pub fn take_cookie_renewal() -> Option<CookieRenewal> {
+    COOKIE_RENEWAL
+        .try_with(|slot| slot.borrow_mut().take())
+        .ok()
+        .flatten()
+}
+
 pub fn build_cookie(
     config: &AppConfig,
     name: &'static str,
@@ -43,23 +78,47 @@ pub fn build_cookie(
     http_only: bool,
     max_age_secs: i64,
 ) -> Cookie<'static> {
+    persistent_cookie(config.cookie_secure, name, value, http_only, max_age_secs)
+}
+
+fn persistent_cookie(
+    secure: bool,
+    name: &'static str,
+    value: &str,
+    http_only: bool,
+    max_age_secs: i64,
+) -> Cookie<'static> {
+    let max_age = CookieDuration::seconds(max_age_secs.max(0));
+    let expires = if max_age_secs > 0 {
+        OffsetDateTime::now_utc() + max_age
+    } else {
+        OffsetDateTime::UNIX_EPOCH
+    };
     Cookie::build((name, value.to_owned()))
         .path("/")
         .http_only(http_only)
-        .secure(config.cookie_secure)
+        .secure(secure)
         .same_site(SameSite::Lax)
-        .max_age(CookieDuration::seconds(max_age_secs))
+        .max_age(max_age)
+        .expires(expires)
         .build()
 }
 
 pub fn clear_cookie(config: &AppConfig, name: &'static str) -> Cookie<'static> {
-    Cookie::build((name, ""))
-        .path("/")
-        .http_only(true)
-        .secure(config.cookie_secure)
-        .same_site(SameSite::Lax)
-        .max_age(CookieDuration::seconds(0))
-        .build()
+    persistent_cookie(config.cookie_secure, name, "", true, 0)
+}
+
+pub fn response_sets_cookie(headers: &axum::http::HeaderMap, name: &str) -> bool {
+    let prefix = format!("{name}=");
+    headers
+        .get_all(axum::http::header::SET_COOKIE)
+        .iter()
+        .any(|value| {
+            value
+                .to_str()
+                .ok()
+                .is_some_and(|raw| raw.starts_with(&prefix))
+        })
 }
 
 pub fn issue_csrf(config: &AppConfig, jar: CookieJar) -> Result<(CookieJar, String), AppError> {
@@ -163,10 +222,19 @@ impl FromRequestParts<AppState> for AuthSession {
         let Some(cookie) = jar.get(session_cookie_name(&state.config)) else {
             return Err(AppError::Unauthenticated);
         };
-        let Some(session) = auth::load(state, cookie.value()).await? else {
+        let Some(loaded) = auth::load(state, cookie.value()).await? else {
             return Err(AppError::Unauthenticated);
         };
-        Ok(AuthSession { session, jar })
+        if loaded.refresh_cookie {
+            let max_age = (loaded.session.expires_at - chrono::Utc::now())
+                .num_seconds()
+                .max(60);
+            note_cookie_renewal(session_cookie_name(&state.config), cookie.value(), max_age);
+        }
+        Ok(AuthSession {
+            session: loaded.session,
+            jar,
+        })
     }
 }
 
@@ -257,4 +325,22 @@ impl FromRequestParts<AppState> for AdminSession {
 
 pub fn require_recent_auth(state: &AppState, session: &CurrentSession) -> Result<(), AppError> {
     auth::require_step_up(state, session)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::persistent_cookie;
+
+    #[test]
+    fn session_cookie_survives_browser_restarts() {
+        let header = persistent_cookie(true, "__Host-knotree_session", "token-value", true, 3_600)
+            .to_string();
+        let lower = header.to_ascii_lowercase();
+        assert!(lower.contains("max-age=3600"), "{header}");
+        assert!(lower.contains("expires="), "{header}");
+        assert!(lower.contains("httponly"), "{header}");
+        assert!(lower.contains("secure"), "{header}");
+        assert!(lower.contains("path=/"), "{header}");
+        assert!(!lower.contains("domain="), "{header}");
+    }
 }

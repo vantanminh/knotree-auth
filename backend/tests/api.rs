@@ -134,6 +134,36 @@ async fn identity_platform_flows() {
     assert_eq!(me.json["email"], email);
     assert_eq!(me.json["email_verified"], true);
     assert_eq!(me.json["is_admin"], false);
+    sqlx::query(
+        "UPDATE sessions SET last_active_at = now() - interval '30 minutes', expires_at = now() + interval '2 hours' WHERE revoked_at IS NULL",
+    )
+    .execute(&state.db)
+    .await
+    .unwrap();
+    let resumed = api.get_response("/api/v1/me").await;
+    assert_eq!(resumed.status(), StatusCode::OK);
+    let refreshed = resumed
+        .headers()
+        .get_all(reqwest::header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .any(|value| {
+            let lower = value.to_ascii_lowercase();
+            lower.contains("knotree_session=")
+                && lower.contains("max-age=")
+                && lower.contains("expires=")
+        });
+    assert!(
+        refreshed,
+        "activity should refresh the persistent session cookie"
+    );
+    let extended: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM sessions WHERE revoked_at IS NULL AND expires_at > now() + interval '10 days')",
+    )
+    .fetch_one(&state.db)
+    .await
+    .unwrap();
+    assert!(extended, "activity should slide the server session expiry");
 
     let denied = api.get("/api/v1/admin/stats").await;
     assert_eq!(denied.status, StatusCode::FORBIDDEN);

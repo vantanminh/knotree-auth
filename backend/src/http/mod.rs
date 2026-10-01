@@ -59,11 +59,14 @@ async fn request_context(req: Request, next: Next) -> Response {
     let path = req.uri().path().to_string();
     let response = REQUEST_ID
         .scope(request_id.clone(), async move {
-            let mut response = next.run(req).await;
-            if let Ok(value) = HeaderValue::from_str(&request_id) {
-                response.headers_mut().insert("x-request-id", value);
-            }
-            response
+            extract::scope_cookie_renewal(async move {
+                let mut response = next.run(req).await;
+                if let Ok(value) = HeaderValue::from_str(&request_id) {
+                    response.headers_mut().insert("x-request-id", value);
+                }
+                response
+            })
+            .await
         })
         .await;
     let status = response.status().as_u16().to_string();
@@ -99,6 +102,20 @@ async fn security_headers(
         "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
     );
     insert(headers, "cache-control", "no-store");
+    if let Some(renewal) = extract::take_cookie_renewal() {
+        if !extract::response_sets_cookie(headers, renewal.name) {
+            let cookie = extract::build_cookie(
+                &state.config,
+                renewal.name,
+                &renewal.value,
+                true,
+                renewal.max_age_secs,
+            );
+            if let Ok(value) = HeaderValue::from_str(&cookie.to_string()) {
+                headers.append(header::SET_COOKIE, value);
+            }
+        }
+    }
     if state.config.cookie_secure {
         insert(
             headers,

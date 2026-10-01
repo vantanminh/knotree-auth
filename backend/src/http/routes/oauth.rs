@@ -53,12 +53,12 @@ pub async fn authorize(
     let token = jar
         .get(crate::http::extract::session_cookie_name(&state.config))
         .map(|cookie| cookie.value().to_string());
-    let session = if let Some(token) = token {
-        auth::load(&state, &token).await.ok().flatten()
+    let loaded = if let Some(token) = token.as_deref() {
+        auth::load(&state, token).await.ok().flatten()
     } else {
         None
     };
-    let Some(session) = session else {
+    let Some(loaded) = loaded else {
         let target = format!(
             "/sign-in?return_to={}",
             urlencoding_query(&format!(
@@ -68,6 +68,19 @@ pub async fn authorize(
         );
         return Redirect::temporary(&target).into_response();
     };
+    if loaded.refresh_cookie {
+        if let Some(token) = token.as_deref() {
+            let max_age = (loaded.session.expires_at - chrono::Utc::now())
+                .num_seconds()
+                .max(60);
+            crate::http::extract::note_cookie_renewal(
+                crate::http::extract::session_cookie_name(&state.config),
+                token,
+                max_age,
+            );
+        }
+    }
+    let session = loaded.session;
     if !valid.client.first_party {
         let id = uuid::Uuid::now_v7();
         let now = chrono::Utc::now();
