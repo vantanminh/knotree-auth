@@ -1,4 +1,4 @@
-use crate::admin::{self, LogFilters, UserQuery};
+use crate::admin::{self, ClientQuery, LogFilters, UserQuery};
 use crate::error::AppError;
 use crate::http::extract::{require_recent_auth, AdminSession, Csrf, Meta};
 use crate::state::AppState;
@@ -165,4 +165,38 @@ pub async fn logs(
     Ok(Json(
         admin::email_log(&state, query.limit.unwrap_or(50), query.offset.unwrap_or(0)).await?,
     ))
+}
+
+#[derive(Deserialize)]
+pub struct ClientListQuery {
+    q: Option<String>,
+    status: Option<String>,
+    #[serde(rename = "type")]
+    client_type: Option<String>,
+}
+
+pub async fn clients(
+    State(state): State<AppState>,
+    _admin: AdminSession,
+    Query(query): Query<ClientListQuery>,
+) -> Result<Json<Value>, AppError> {
+    Ok(Json(
+        admin::list_clients(
+            &state,
+            ClientQuery {
+                q: query.q,
+                status: query.status,
+                client_type: query.client_type,
+            },
+        )
+        .await?,
+    ))
+}
+
+pub async fn client(
+    State(state): State<AppState>,
+    _admin: AdminSession,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    Ok(Json(admin::client_detail(&state, &id).await?))
 }

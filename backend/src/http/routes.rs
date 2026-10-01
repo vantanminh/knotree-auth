@@ -99,6 +99,8 @@ pub fn api_routes() -> Router<AppState> {
             "/api/v1/admin/users/{id}/force-password-reset",
             post(admin::force_reset),
         )
+        .route("/api/v1/admin/clients", get(admin::clients))
+        .route("/api/v1/admin/clients/{id}", get(admin::client))
         .route("/api/v1/admin/security-events", get(admin::security_events))
         .route("/api/v1/admin/logs", get(admin::logs))
         .route("/api/v1/dev/mailbox", get(auth::dev_mailbox))

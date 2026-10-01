@@ -65,6 +65,35 @@ paths:
       responses:
         "200": { description: Aggregate counts }
         "403": { description: Not an admin, or authenticator is not enabled }
+  /api/v1/admin/clients:
+    get:
+      summary: Registered services (OAuth clients), read-only
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+          description: Matches client id or name
+        - in: query
+          name: status
+          schema: { type: string, enum: [active, disabled] }
+        - in: query
+          name: type
+          schema: { type: string, enum: [public, confidential, service] }
+      responses:
+        "200": { description: "Clients with authorized_users, active_tokens and last_authorized_at. Never includes the secret hash." }
+        "403": { description: Not an admin, or authenticator is not enabled }
+  /api/v1/admin/clients/{id}:
+    get:
+      summary: One registered service with its 20 most recent consents
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Client detail }
+        "403": { description: Not an admin, or authenticator is not enabled }
+        "404": { description: Unknown client }
   /oauth/authorize:
     get:
       summary: OAuth 2.1 authorization endpoint

@@ -169,6 +169,10 @@ async fn identity_platform_flows() {
     assert_eq!(denied.status, StatusCode::FORBIDDEN);
     let denied = api.get("/api/v1/admin/analytics").await;
     assert_eq!(denied.status, StatusCode::FORBIDDEN);
+    let denied = api.get("/api/v1/admin/clients").await;
+    assert_eq!(denied.status, StatusCode::FORBIDDEN);
+    let denied = api.get("/api/v1/admin/clients/knotree-study").await;
+    assert_eq!(denied.status, StatusCode::FORBIDDEN);
     let escalate = api
         .post_method_patch(
             "/api/v1/me/profile",
@@ -454,6 +458,28 @@ async fn identity_platform_flows() {
     let fallback = api.get("/api/v1/admin/analytics?days=365").await;
     assert_eq!(fallback.json["days"], 30);
     assert_eq!(fallback.json["series"].as_array().unwrap().len(), 30);
+    let clients = api.get("/api/v1/admin/clients").await;
+    assert_eq!(clients.status, StatusCode::OK, "{}", clients.text);
+    let study = &clients.json["items"][0];
+    assert_eq!(study["id"], "knotree-study");
+    assert_eq!(study["client_type"], "public");
+    assert!(study["authorized_users"].as_i64().unwrap() >= 1);
+    assert!(study["last_authorized_at"].is_string());
+    assert!(study.get("secret_hash").is_none());
+    let filtered = api
+        .get("/api/v1/admin/clients?q=study&status=disabled")
+        .await;
+    assert_eq!(filtered.json["items"].as_array().unwrap().len(), 0);
+    let detail = api.get("/api/v1/admin/clients/knotree-study").await;
+    assert_eq!(detail.status, StatusCode::OK, "{}", detail.text);
+    assert_eq!(detail.json["name"], "Knotree Study");
+    assert!(detail.json["recent_consents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["email"] == email.as_str()));
+    let missing = api.get("/api/v1/admin/clients/no-such-client").await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
     let users = api.get("/api/v1/admin/users?q=ada").await;
     assert_eq!(users.status, StatusCode::OK);
     let logs = api.get("/api/v1/admin/security-events").await;
