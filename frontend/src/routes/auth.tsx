@@ -266,6 +266,19 @@ export function SignUpPage() {
   );
 }
 
+// Verification tokens are single-use. StrictMode (and remounts) run the effect
+// twice, so share one in-flight request per token instead of sending two.
+const verifyRequests = new Map<string, Promise<unknown>>();
+
+function verifyEmailOnce(token: string) {
+  let request = verifyRequests.get(token);
+  if (!request) {
+    request = api("/api/v1/auth/email/verify", { method: "POST", body: JSON.stringify({ token }) });
+    verifyRequests.set(token, request);
+  }
+  return request;
+}
+
 export function VerifyEmailPage() {
   const [params] = useSearchParams();
   const token = params.get("token") ?? "";
@@ -278,12 +291,17 @@ export function VerifyEmailPage() {
 
   useEffect(() => {
     if (!token) return;
-    void api("/api/v1/auth/email/verify", { method: "POST", body: JSON.stringify({ token }) })
-      .then(() => setState("verified"))
+    let active = true;
+    void verifyEmailOnce(token)
+      .then(() => active && setState("verified"))
       .catch((err: unknown) => {
+        if (!active) return;
         setState("failed");
         setError(err instanceof ApiError ? err.message : t("This link is not valid."));
       });
+    return () => {
+      active = false;
+    };
   }, [token]);
 
   async function resend(event: React.FormEvent) {
