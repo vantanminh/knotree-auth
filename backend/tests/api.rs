@@ -167,6 +167,8 @@ async fn identity_platform_flows() {
 
     let denied = api.get("/api/v1/admin/stats").await;
     assert_eq!(denied.status, StatusCode::FORBIDDEN);
+    let denied = api.get("/api/v1/admin/analytics").await;
+    assert_eq!(denied.status, StatusCode::FORBIDDEN);
     let escalate = api
         .post_method_patch(
             "/api/v1/me/profile",
@@ -437,6 +439,21 @@ async fn identity_platform_flows() {
     let stats = api.get("/api/v1/admin/stats").await;
     assert_eq!(stats.status, StatusCode::OK, "{}", stats.text);
     assert!(stats.json["users"]["total"].as_i64().unwrap() >= 1);
+    let analytics = api.get("/api/v1/admin/analytics?days=7").await;
+    assert_eq!(analytics.status, StatusCode::OK, "{}", analytics.text);
+    assert_eq!(analytics.json["days"], 7);
+    let series = analytics.json["series"].as_array().unwrap();
+    assert_eq!(series.len(), 7);
+    assert!(series[6]["logins_success"].as_i64().unwrap() >= 1);
+    assert!(analytics.json["active_users"]["daily"].as_i64().unwrap() >= 1);
+    assert!(analytics.json["login_methods"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["key"] == "password"));
+    let fallback = api.get("/api/v1/admin/analytics?days=365").await;
+    assert_eq!(fallback.json["days"], 30);
+    assert_eq!(fallback.json["series"].as_array().unwrap().len(), 30);
     let users = api.get("/api/v1/admin/users?q=ada").await;
     assert_eq!(users.status, StatusCode::OK);
     let logs = api.get("/api/v1/admin/security-events").await;

@@ -5,6 +5,7 @@ import { ActivityList } from "./account";
 import {
   ArrowLeftIcon,
   BanIcon,
+  ChartIcon,
   CheckCircleIcon,
   ChevronRightIcon,
   DevicesIcon,
@@ -149,10 +150,16 @@ export function AdminOverview() {
         title={t("Overview")}
         detail={t("Identity operations for Knotree.")}
         actions={
-          <Link to="/admin/users" className={buttonClass("secondary", "md")}>
-            <UsersIcon size={15} />
-            {t("Browse users")}
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link to="/admin/analytics" className={buttonClass("secondary", "md")}>
+              <ChartIcon size={15} />
+              {t("View analytics")}
+            </Link>
+            <Link to="/admin/users" className={buttonClass("secondary", "md")}>
+              <UsersIcon size={15} />
+              {t("Browse users")}
+            </Link>
+          </div>
         }
       />
 
@@ -785,6 +792,308 @@ export function AdminLogs() {
           </div>
         )}
       </Card>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Analytics                                                           */
+/* ------------------------------------------------------------------ */
+
+type AnalyticsDay = {
+  day: string;
+  signups: number;
+  logins_success: number;
+  logins_failed: number;
+  active_users: number;
+};
+
+type Breakdown = { key: string; count: number }[];
+
+type Analytics = {
+  days: number;
+  totals: { signups: number; logins_success: number; logins_failed: number; users: number; mfa_users: number };
+  active_users: { daily: number; weekly: number; monthly: number };
+  series: AnalyticsDay[];
+  login_methods: Breakdown;
+  identity_providers: Breakdown;
+  event_types: Breakdown;
+  oauth_clients: Breakdown;
+};
+
+const ranges = [7, 30, 90] as const;
+
+const methodLabels: Record<string, string> = {
+  password: "Password",
+  google: "Google",
+  github: "GitHub",
+  totp: "Authenticator app",
+  email: "Email code",
+  recovery: "Recovery code",
+};
+
+function shortDay(value: string) {
+  return new Intl.DateTimeFormat(intlLocale(), { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(value));
+}
+
+function niceMax(value: number) {
+  if (value <= 4) return 4;
+  const step = 10 ** Math.floor(Math.log10(value));
+  return Math.ceil(value / step) * step;
+}
+
+const chartWidth = 480;
+const chartHeight = 200;
+const chartPad = { top: 10, right: 8, bottom: 26, left: 36 };
+
+function ChartFrame({ max, series, children }: { max: number; series: AnalyticsDay[]; children: ReactNode }) {
+  const innerH = chartHeight - chartPad.top - chartPad.bottom;
+  const ticks = [0, max / 2, max];
+  const labelEvery = Math.ceil(series.length / 4);
+  const innerW = chartWidth - chartPad.left - chartPad.right;
+  return (
+    <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="h-auto w-full" role="img" aria-hidden="true">
+      {ticks.map((tick) => {
+        const y = chartPad.top + innerH - (tick / max) * innerH;
+        return (
+          <g key={tick}>
+            <line x1={chartPad.left} x2={chartWidth - chartPad.right} y1={y} y2={y} className="stroke-line" strokeWidth={1} />
+            <text x={chartPad.left - 6} y={y + 3.5} textAnchor="end" className="fill-muted text-[12px] tabular">
+              {numberFormat.format(Math.round(tick))}
+            </text>
+          </g>
+        );
+      })}
+      {series.map((point, index) =>
+        index % labelEvery === 0 || index === series.length - 1 ? (
+          <text
+            key={point.day}
+            x={chartPad.left + ((index + 0.5) / series.length) * innerW}
+            y={chartHeight - 6}
+            textAnchor="middle"
+            className="fill-muted text-[12px]"
+          >
+            {shortDay(point.day)}
+          </text>
+        ) : null,
+      )}
+      {children}
+    </svg>
+  );
+}
+
+function LoginBars({ series }: { series: AnalyticsDay[] }) {
+  const max = niceMax(Math.max(...series.map((d) => d.logins_success + d.logins_failed), 0));
+  const innerW = chartWidth - chartPad.left - chartPad.right;
+  const innerH = chartHeight - chartPad.top - chartPad.bottom;
+  const slot = innerW / series.length;
+  const bar = Math.max(Math.min(slot * 0.7, 18), 1.5);
+  return (
+    <ChartFrame max={max} series={series}>
+      {series.map((point, index) => {
+        const x = chartPad.left + index * slot + (slot - bar) / 2;
+        const okH = (point.logins_success / max) * innerH;
+        const failH = (point.logins_failed / max) * innerH;
+        const base = chartPad.top + innerH;
+        return (
+          <g key={point.day}>
+            <title>
+              {`${shortDay(point.day)}: ${t("{count} successful", { count: point.logins_success })}, ${t("{count} failed", { count: point.logins_failed })}`}
+            </title>
+            <rect x={x} y={base - okH} width={bar} height={okH} className="fill-pine" />
+            <rect x={x} y={base - okH - failH} width={bar} height={failH} className="fill-danger/80" />
+          </g>
+        );
+      })}
+    </ChartFrame>
+  );
+}
+
+function TrendLines({ series }: { series: AnalyticsDay[] }) {
+  const max = niceMax(Math.max(...series.map((d) => Math.max(d.signups, d.active_users)), 0));
+  const innerW = chartWidth - chartPad.left - chartPad.right;
+  const innerH = chartHeight - chartPad.top - chartPad.bottom;
+  const x = (index: number) => chartPad.left + ((index + 0.5) / series.length) * innerW;
+  const y = (value: number) => chartPad.top + innerH - (value / max) * innerH;
+  const path = (pick: (d: AnalyticsDay) => number) =>
+    series.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(pick(d)).toFixed(1)}`).join(" ");
+  const area = `${path((d) => d.active_users)} L${x(series.length - 1).toFixed(1)},${y(0)} L${x(0).toFixed(1)},${y(0)} Z`;
+  return (
+    <ChartFrame max={max} series={series}>
+      <path d={area} className="fill-pine/10" />
+      <path d={path((d) => d.active_users)} className="stroke-pine" fill="none" strokeWidth={2} strokeLinejoin="round" />
+      <path d={path((d) => d.signups)} className="stroke-amber" fill="none" strokeWidth={2} strokeLinejoin="round" strokeDasharray="4 3" />
+      {series.map((point, index) => (
+        <rect key={point.day} x={x(index) - innerW / series.length / 2} y={chartPad.top} width={innerW / series.length} height={innerH} fill="transparent">
+          <title>
+            {`${shortDay(point.day)}: ${t("{count} active users", { count: point.active_users })}, ${t("{count} sign-ups", { count: point.signups })}`}
+          </title>
+        </rect>
+      ))}
+    </ChartFrame>
+  );
+}
+
+function Legend({ items }: { items: { label: string; className: string; dashed?: boolean }[] }) {
+  return (
+    <div className="flex flex-wrap gap-4 text-[12.5px] text-muted">
+      {items.map((item) => (
+        <span key={item.label} className="inline-flex items-center gap-1.5">
+          <span className={`inline-block h-2 w-3 rounded-[2px] ${item.className} ${item.dashed ? "opacity-80" : ""}`} />
+          {item.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function BarList({ rows, label }: { rows: Breakdown; label: (key: string) => string }) {
+  if (rows.length === 0) return <p className="px-5 pb-5 text-sm text-muted sm:px-6">{t("No data for this period.")}</p>;
+  const max = Math.max(...rows.map((row) => row.count));
+  const total = rows.reduce((sum, row) => sum + row.count, 0);
+  return (
+    <ul className="grid gap-2.5 px-5 pb-5 sm:px-6">
+      {rows.map((row) => (
+        <li key={row.key}>
+          <div className="flex items-baseline justify-between gap-3 text-[13px]">
+            <span className="truncate text-ink-soft">{label(row.key)}</span>
+            <span className="tabular shrink-0 text-muted">
+              {numberFormat.format(row.count)} · {percent(row.count, total)}%
+            </span>
+          </div>
+          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-sunken">
+            <div className="h-full rounded-full bg-pine" style={{ width: `${(row.count / max) * 100}%` }} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function AdminAnalytics() {
+  const [days, setDays] = useState<(typeof ranges)[number]>(30);
+  const [data, setData] = useState<Analytics | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let current = true;
+    setError("");
+    void api<Analytics>(`/api/v1/admin/analytics?days=${days}`)
+      .then((value) => current && setData(value))
+      .catch((err: unknown) => current && setError(err instanceof ApiError ? err.message : t("Could not load analytics.")));
+    return () => {
+      current = false;
+    };
+  }, [days]);
+
+  const picker = (
+    <div role="group" aria-label={t("Time range")} className="inline-flex rounded-[8px] border border-line bg-surface p-0.5">
+      {ranges.map((range) => (
+        <button
+          key={range}
+          type="button"
+          aria-pressed={days === range}
+          onClick={() => setDays(range)}
+          className={`rounded-[6px] px-3 py-1.5 text-[13px] font-medium transition-colors ${
+            days === range ? "bg-pine text-white" : "text-muted hover:text-ink"
+          }`}
+        >
+          {t("{days} days", { days: range })}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (error) return <Alert>{error}</Alert>;
+  if (!data) return <PageSkeleton label={t("Loading analytics…")} />;
+
+  const attempts = data.totals.logins_success + data.totals.logins_failed;
+  const failureRate = percent(data.totals.logins_failed, attempts);
+  const mfaRate = percent(data.totals.mfa_users, data.totals.users);
+
+  return (
+    <div className="grid gap-6">
+      <PageTitle title={t("Analytics")} detail={t("Usage and sign-in trends across Knotree accounts.")} actions={picker} />
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Metric
+          label={t("Active users")}
+          value={data.active_users.daily}
+          icon={<UsersIcon />}
+          detail={t("{week} this week · {month} this month", {
+            week: numberFormat.format(data.active_users.weekly),
+            month: numberFormat.format(data.active_users.monthly),
+          })}
+        />
+        <Metric label={t("New users")} value={data.totals.signups} icon={<CheckCircleIcon />} detail={t("In the last {days} days.", { days: data.days })} />
+        <Metric
+          label={t("Sign-ins")}
+          value={data.totals.logins_success}
+          icon={<KeyIcon />}
+          meter={{ value: failureRate, tone: failureRate > 20 ? "danger" : "amber" }}
+          detail={t("{rate}% failed attempts", { rate: failureRate })}
+        />
+        <Metric
+          label={t("Two-step verification")}
+          value={data.totals.mfa_users}
+          icon={<ShieldIcon />}
+          meter={{ value: mfaRate }}
+          detail={t("{rate}% of users", { rate: mfaRate })}
+        />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader title={t("Active users and sign-ups")} description={t("Distinct users signing in, and new accounts, per day (UTC).")} />
+          <div className="grid gap-3 px-5 pb-5 pt-4 sm:px-6">
+            <TrendLines series={data.series} />
+            <Legend
+              items={[
+                { label: t("Active users"), className: "bg-pine" },
+                { label: t("Sign-ups"), className: "bg-amber", dashed: true },
+              ]}
+            />
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title={t("Sign-in attempts")} description={t("Successful and failed sign-ins per day (UTC).")} />
+          <div className="grid gap-3 px-5 pb-5 pt-4 sm:px-6">
+            <LoginBars series={data.series} />
+            <Legend
+              items={[
+                { label: t("Successful"), className: "bg-pine" },
+                { label: t("Failed"), className: "bg-danger/80" },
+              ]}
+            />
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader title={t("Sign-in methods")} description={t("Factors used in successful sign-ins.")} />
+          <div className="pt-4">
+            <BarList rows={data.login_methods} label={(key) => t(methodLabels[key] ?? key)} />
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title={t("Linked identities")} description={t("Users by sign-in provider, all time.")} />
+          <div className="pt-4">
+            <BarList rows={data.identity_providers} label={(key) => t(methodLabels[key] ?? key)} />
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title={t("Top security events")} description={t("Most frequent event types in this period.")} />
+          <div className="pt-4">
+            <BarList rows={data.event_types} label={eventLabel} />
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title={t("Connected apps")} description={t("Authorizations by OAuth client in this period.")} />
+          <div className="pt-4">
+            <BarList rows={data.oauth_clients} label={(key) => key} />
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

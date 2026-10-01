@@ -83,6 +83,7 @@ pub fn api_routes() -> Router<AppState> {
             get(account::recovery_count).post(account::recovery_regenerate),
         )
         .route("/api/v1/admin/stats", get(admin::stats))
+        .route("/api/v1/admin/analytics", get(admin::analytics))
         .route("/api/v1/admin/users", get(admin::users))
         .route("/api/v1/admin/users/{id}", get(admin::user))
         .route(
