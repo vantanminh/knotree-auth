@@ -266,13 +266,15 @@ export function SignUpPage() {
   );
 }
 
-// The token is single-use. StrictMode runs effects twice in development, so share one request per token.
-const verifications = new Map<string, Promise<unknown>>();
+// Verification tokens are single-use. StrictMode (and remounts) run the effect
+// twice, so share one in-flight request per token instead of sending two.
+const verifyRequests = new Map<string, Promise<unknown>>();
+
 function verifyEmailOnce(token: string) {
-  let request = verifications.get(token);
+  let request = verifyRequests.get(token);
   if (!request) {
     request = api("/api/v1/auth/email/verify", { method: "POST", body: JSON.stringify({ token }) });
-    verifications.set(token, request);
+    verifyRequests.set(token, request);
   }
   return request;
 }
@@ -290,10 +292,8 @@ export function VerifyEmailPage() {
   useEffect(() => {
     if (!token) return;
     let active = true;
-    verifyEmailOnce(token)
-      .then(() => {
-        if (active) setState("verified");
-      })
+    void verifyEmailOnce(token)
+      .then(() => active && setState("verified"))
       .catch((err: unknown) => {
         if (!active) return;
         setState("failed");
