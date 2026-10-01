@@ -79,7 +79,12 @@ pub async fn request_reset(
     apply_meta(&mut event, meta);
     super::record(&state.db, event).await?;
     let link = format!("{}/reset-password?token={token}", state.config.app_base_url);
-    email::enqueue_and_send(state, &email, templates::password_reset(&link)).await?;
+    email::enqueue_and_send(
+        state,
+        &email,
+        templates::password_reset(crate::i18n::user_locale(&state.db, user_id).await, &link),
+    )
+    .await?;
     metrics::counter!("auth_password_reset_requested_total").increment(1);
     Ok(())
 }
@@ -156,7 +161,8 @@ pub async fn reset_password(
         state,
         &email,
         templates::security_alert(
-            "The password for your Knotree account was reset. Other sessions were signed out.",
+            crate::i18n::user_locale(&state.db, user_id).await,
+            templates::SecurityAlert::PasswordReset,
             &format!("{}/account/security", state.config.app_base_url),
         ),
     )
@@ -236,7 +242,8 @@ pub async fn change_password(
         state,
         &email,
         templates::security_alert(
-            "The password for your Knotree account was changed.",
+            crate::i18n::user_locale(&state.db, session.user_id).await,
+            templates::SecurityAlert::PasswordChanged,
             &format!("{}/account/security", state.config.app_base_url),
         ),
     )

@@ -554,10 +554,11 @@ async fn create_social_user(
         .name
         .as_ref()
         .map(|name| name.chars().take(80).collect::<String>());
-    sqlx::query("INSERT INTO users (id, display_name, status, created_at, updated_at) VALUES ($1,$2,'active',$3,$3)")
+    sqlx::query("INSERT INTO users (id, display_name, status, created_at, updated_at, locale) VALUES ($1,$2,'active',$3,$3,$4)")
         .bind(user_id)
         .bind(&display_name)
         .bind(now)
+        .bind(meta.locale.as_str())
         .execute(&mut *tx)
         .await?;
     if let Err(err) = sqlx::query(

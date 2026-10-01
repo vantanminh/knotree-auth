@@ -1,8 +1,10 @@
+import { intlLocale, t } from "./i18n";
+
 export function formatWhen(value: string | null | undefined) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(intlLocale(), {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
@@ -35,7 +37,7 @@ export const eventLabels: Record<string, string> = {
 
 export function eventLabel(type: string) {
   const label = eventLabels[type];
-  if (label) return label;
+  if (label) return t(label);
   const words = type.replaceAll("_", " ").toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
@@ -46,8 +48,8 @@ export function formatRelative(value: string | null | undefined) {
   if (Number.isNaN(date.getTime())) return "—";
   const seconds = Math.round((date.getTime() - Date.now()) / 1000);
   const abs = Math.abs(seconds);
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  if (abs < 45) return "just now";
+  const rtf = new Intl.RelativeTimeFormat(intlLocale(), { numeric: "auto" });
+  if (abs < 45) return t("just now");
   if (abs < 3600) return rtf.format(Math.round(seconds / 60), "minute");
   if (abs < 86400) return rtf.format(Math.round(seconds / 3600), "hour");
   if (abs < 86400 * 7) return rtf.format(Math.round(seconds / 86400), "day");
@@ -58,7 +60,7 @@ export function formatDate(value: string | null | undefined) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+  return new Intl.DateTimeFormat(intlLocale(), { dateStyle: "medium" }).format(date);
 }
 
 export function statusLabel(status: string) {
@@ -67,12 +69,14 @@ export function statusLabel(status: string) {
     disabled: "Disabled",
     pending_deletion: "Pending deletion",
   };
-  return labels[status] ?? status.replaceAll("_", " ");
+  const label = labels[status];
+  return label ? t(label) : status.replaceAll("_", " ");
 }
 
 export function providerLabel(provider: string) {
   const labels: Record<string, string> = { google: "Google", github: "GitHub", password: "Email and password" };
-  return labels[provider] ?? provider;
+  const label = labels[provider];
+  return label ? t(label) : provider;
 }
 
 export function isMobileDevice(device: string) {

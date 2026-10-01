@@ -181,6 +181,24 @@ async fn identity_platform_flows() {
         )
         .await;
     assert_eq!(renamed.status(), StatusCode::OK, "{}", renamed.text);
+    let bad_locale = api
+        .post_method_patch("/api/v1/me/profile", json!({"locale": "fr"}))
+        .await;
+    assert_eq!(bad_locale.status(), StatusCode::BAD_REQUEST);
+    let localized = api
+        .post_method_patch("/api/v1/me/profile", json!({"locale": "vi"}))
+        .await;
+    assert_eq!(localized.status(), StatusCode::OK, "{}", localized.text);
+    assert_eq!(api.get("/api/v1/me").await.json["locale"], "vi");
+    let vi_error = api
+        .http
+        .get(format!("{}/api/v1/admin/stats", api.base))
+        .header("accept-language", "vi-VN,vi;q=0.9")
+        .send()
+        .await
+        .unwrap();
+    let vi_body: Value = vi_error.json().await.unwrap();
+    assert_eq!(vi_body["error"]["message"], "Cần quyền quản trị.");
 
     let setup = api.post("/api/v1/me/mfa/totp/setup", json!({})).await;
     assert_eq!(setup.status(), StatusCode::OK, "{}", setup.text);

@@ -1,3 +1,4 @@
+import { t } from "../lib/i18n";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { Button as BaseButton } from "@base-ui/react/button";
 import { Checkbox as BaseCheckbox } from "@base-ui/react/checkbox";
@@ -170,7 +171,7 @@ export function TextField({
           <button
             type="button"
             className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-[var(--radius-control)] text-faint transition-colors hover:text-ink"
-            aria-label={revealed ? "Hide password" : "Show password"}
+            aria-label={revealed ? t("Hide password") : t("Show password")}
             aria-pressed={revealed}
             onClick={() => setRevealed((v) => !v)}
             tabIndex={-1}
@@ -259,11 +260,11 @@ export function PasswordStrength({ value }: { value: string }) {
       <p className="text-[12.5px] text-muted">
         {value ? (
           <>
-            <span className={score <= 1 ? "text-danger" : "text-ink-soft"}>{labels[score]}</span>
-            {score <= 1 ? " · Use at least 10 characters." : null}
+            <span className={score <= 1 ? "text-danger" : "text-ink-soft"}>{t(labels[score] ?? "")}</span>
+            {score <= 1 ? ` · ${t("Use at least 10 characters.")}` : null}
           </>
         ) : (
-          "Use at least 10 characters. A short phrase works well."
+          t("Use at least 10 characters. A short phrase works well.")
         )}
       </p>
     </div>
@@ -594,7 +595,7 @@ export function ConfirmDialog({
           </div>
           <div className="mt-6 flex flex-col-reverse gap-2 border-t border-line bg-paper/70 px-6 py-4 sm:flex-row sm:justify-end">
             <AlertDialog.Close className={buttonClass("secondary", "md")} disabled={pending}>
-              Cancel
+              {t("Cancel")}
             </AlertDialog.Close>
             <Button
               type="button"
@@ -618,7 +619,7 @@ export function ConfirmDialog({
   );
 }
 
-export function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
+export function CopyButton({ value, label = t("Copy") }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -635,7 +636,7 @@ export function CopyButton({ value, label = "Copy" }: { value: string; label?: s
         void navigator.clipboard?.writeText(value).then(() => setCopied(true));
       }}
     >
-      {copied ? "Copied" : label}
+      {copied ? t("Copied") : label}
     </Button>
   );
 }

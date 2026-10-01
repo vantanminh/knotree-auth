@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../lib/i18n";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ActivityList } from "./account";
@@ -75,7 +76,7 @@ type UserDetail = {
   security_events?: SecurityEvent[];
 };
 
-const numberFormat = new Intl.NumberFormat();
+const numberFormat = { format: (value: number) => new Intl.NumberFormat(intlLocale()).format(value) };
 
 function percent(part: number, whole: number) {
   if (!whole) return 0;
@@ -134,10 +135,10 @@ export function AdminOverview() {
   useEffect(() => {
     void api<Stats>("/api/v1/admin/stats")
       .then(setStats)
-      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : "Could not load overview."));
+      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : t("Could not load overview.")));
   }, []);
   if (error) return <Alert>{error}</Alert>;
-  if (!stats) return <PageSkeleton label="Loading overview…" />;
+  if (!stats) return <PageSkeleton label={t("Loading overview…")} />;
 
   const attempts = stats.logins_today.success + stats.logins_today.failure;
   const successRate = percent(stats.logins_today.success, attempts);
@@ -145,50 +146,50 @@ export function AdminOverview() {
   return (
     <div className="grid gap-6">
       <PageTitle
-        title="Overview"
-        detail="Identity operations for Knotree."
+        title={t("Overview")}
+        detail={t("Identity operations for Knotree.")}
         actions={
           <Link to="/admin/users" className={buttonClass("secondary", "md")}>
             <UsersIcon size={15} />
-            Browse users
+            {t("Browse users")}
           </Link>
         }
       />
 
       {stats.security_alerts_today > 0 ? (
-        <Alert tone="warning" title={`${stats.security_alerts_today} security alerts today`}>
-          Failed sign-ins, failed verifications, and disabled accounts.{" "}
+        <Alert tone="warning" title={t("{count} security alerts today", { count: stats.security_alerts_today })}>
+          {t("Failed sign-ins, failed verifications, and disabled accounts.")}{" "}
           <Link to="/admin/security" className="font-medium underline underline-offset-2">
-            Review events
+            {t("Review events")}
           </Link>
         </Alert>
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
-          label="Users"
+          label={t("Users")}
           value={stats.users.total}
           icon={<UsersIcon />}
           detail={
             <>
-              +{numberFormat.format(stats.users.created_today)} today · +{numberFormat.format(stats.users.created_this_week)} this week
+              {t("+{today} today · +{week} this week", { today: numberFormat.format(stats.users.created_today), week: numberFormat.format(stats.users.created_this_week) })}
             </>
           }
         />
-        <Metric label="New this month" value={stats.users.created_this_month} icon={<CheckCircleIcon />} detail="Accounts created since the 1st." />
+        <Metric label={t("New this month")} value={stats.users.created_this_month} icon={<CheckCircleIcon />} detail={t("Accounts created since the 1st.")} />
         <Metric
-          label="MFA enabled"
+          label={t("MFA enabled")}
           value={stats.mfa_enabled_users}
           icon={<ShieldIcon />}
           meter={{ value: percent(stats.mfa_enabled_users, stats.users.total) }}
           detail={`${percent(stats.mfa_enabled_users, stats.users.total)}% of users`}
         />
-        <Metric label="Active sessions" value={stats.active_sessions} icon={<DevicesIcon />} detail="Signed-in browsers right now." />
+        <Metric label={t("Active sessions")} value={stats.active_sessions} icon={<DevicesIcon />} detail={t("Signed-in browsers right now.")} />
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
         <Card>
-          <CardHeader title="Email verification" description="Share of accounts with a verified address." />
+          <CardHeader title={t("Email verification")} description={t("Share of accounts with a verified address.")} />
           <div className="px-5 pb-5 pt-5 sm:px-6">
             <div className="flex h-2 overflow-hidden rounded-full bg-sunken">
               <div className="h-full bg-pine" style={{ width: `${percent(stats.users.verified, stats.users.total)}%` }} />
@@ -198,14 +199,14 @@ export function AdminOverview() {
               <div>
                 <dt className="flex items-center gap-2 text-muted">
                   <span className="h-2 w-2 rounded-full bg-pine" />
-                  Verified
+                  {t("Verified")}
                 </dt>
                 <dd className="tabular mt-1 text-[20px] font-semibold tracking-tight text-ink">{numberFormat.format(stats.users.verified)}</dd>
               </div>
               <div>
                 <dt className="flex items-center gap-2 text-muted">
                   <span className="h-2 w-2 rounded-full bg-amber/70" />
-                  Unverified
+                  {t("Unverified")}
                 </dt>
                 <dd className="tabular mt-1 text-[20px] font-semibold tracking-tight text-ink">{numberFormat.format(stats.users.unverified)}</dd>
               </div>
@@ -214,8 +215,8 @@ export function AdminOverview() {
         </Card>
         <Card>
           <CardHeader
-            title="Sign-ins today"
-            description={attempts ? `${successRate}% succeeded across ${numberFormat.format(attempts)} attempts.` : "No sign-in attempts yet today."}
+            title={t("Sign-ins today")}
+            description={attempts ? t("{rate}% succeeded across {count} attempts.", { rate: successRate, count: numberFormat.format(attempts) }) : t("No sign-in attempts yet today.")}
           />
           <div className="px-5 pb-5 pt-5 sm:px-6">
             <div className="flex h-2 overflow-hidden rounded-full bg-sunken">
@@ -226,7 +227,7 @@ export function AdminOverview() {
               <div>
                 <dt className="flex items-center gap-2 text-muted">
                   <span className="h-2 w-2 rounded-full bg-pine" />
-                  Sign-ins today
+                  {t("Sign-ins today")}
                 </dt>
                 <dd className="tabular mt-1 text-[20px] font-semibold tracking-tight text-ink">
                   {numberFormat.format(stats.logins_today.success)}
@@ -235,7 +236,7 @@ export function AdminOverview() {
               <div>
                 <dt className="flex items-center gap-2 text-muted">
                   <span className="h-2 w-2 rounded-full bg-danger/80" />
-                  Failed sign-ins today
+                  {t("Failed sign-ins today")}
                 </dt>
                 <dd className="tabular mt-1 text-[20px] font-semibold tracking-tight text-ink">
                   {numberFormat.format(stats.logins_today.failure)}
@@ -314,7 +315,7 @@ export function AdminUsers() {
       const body = await api<{ items: UserRow[] }>(`/api/v1/admin/users?q=${encodeURIComponent(q)}`);
       setItems(body.items);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not search users.");
+      setError(err instanceof ApiError ? err.message : t("Could not search users."));
       setItems((current) => current ?? []);
     } finally {
       setPending(false);
@@ -327,31 +328,31 @@ export function AdminUsers() {
 
   return (
     <div className="grid gap-6">
-      <PageTitle title="Users" detail="Search by user ID, email, or name." />
+      <PageTitle title={t("Users")} detail={t("Search by user ID, email, or name.")} />
       {error ? <Alert>{error}</Alert> : null}
       <Card>
         <form className="flex gap-2 border-b border-line p-3 sm:p-4" onSubmit={search}>
-          <SearchBar label="Search" value={q} onChange={setQ} placeholder="User ID, email, or name" />
+          <SearchBar label={t("Search")} value={q} onChange={setQ} placeholder={t("User ID, email, or name")} />
           <Button type="submit" pending={pending}>
-            Search
+            {t("Search")}
           </Button>
         </form>
         {!items ? (
           <TableSkeleton />
         ) : items.length === 0 ? (
-          <EmptyState icon={<UsersIcon />} title="No users match">
-            Try a different email, name, or user ID.
+          <EmptyState icon={<UsersIcon />} title={t("No users match")}>
+            {t("Try a different email, name, or user ID.")}
           </EmptyState>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-left text-sm">
               <thead>
                 <tr className="border-b border-line bg-paper/70 text-[12px] uppercase tracking-[0.06em] text-muted">
-                  <th className="px-5 py-2.5 font-medium">User</th>
-                  <th className="px-3 py-2.5 font-medium">Status</th>
-                  <th className="px-3 py-2.5 font-medium">MFA</th>
-                  <th className="px-3 py-2.5 font-medium">Last sign-in</th>
-                  <th className="px-3 py-2.5 font-medium">Created</th>
+                  <th className="px-5 py-2.5 font-medium">{t("User")}</th>
+                  <th className="px-3 py-2.5 font-medium">{t("Status")}</th>
+                  <th className="px-3 py-2.5 font-medium">{t("MFA")}</th>
+                  <th className="px-3 py-2.5 font-medium">{t("Last sign-in")}</th>
+                  <th className="px-3 py-2.5 font-medium">{t("Created")}</th>
                   <th className="w-10" />
                 </tr>
               </thead>
@@ -374,8 +375,8 @@ export function AdminUsers() {
                             {user.email}
                           </Link>
                           <span className="flex items-center gap-1.5 text-[12.5px] text-muted">
-                            {user.display_name || "No name"}
-                            {!user.email_verified ? <span className="text-amber">· Unverified</span> : null}
+                            {user.display_name || t("No name")}
+                            {!user.email_verified ? <span className="text-amber">{t("· Unverified")}</span> : null}
                           </span>
                         </div>
                       </div>
@@ -384,10 +385,10 @@ export function AdminUsers() {
                       <StatusBadge status={user.status} />
                     </td>
                     <td className="px-3 py-3">
-                      {user.mfa_enabled ? <Badge tone="success">On</Badge> : <Badge tone="outline">Off</Badge>}
+                      {user.mfa_enabled ? <Badge tone="success">{t("On")}</Badge> : <Badge tone="outline">{t("Off")}</Badge>}
                     </td>
                     <td className="tabular px-3 py-3 text-muted" title={formatWhen(user.last_login_at)}>
-                      {user.last_login_at ? formatRelative(user.last_login_at) : "Never"}
+                      {user.last_login_at ? formatRelative(user.last_login_at) : t("Never")}
                     </td>
                     <td className="tabular px-3 py-3 text-muted">{formatDate(user.created_at)}</td>
                     <td className="pr-4 text-faint">
@@ -438,7 +439,7 @@ export function AdminUser() {
     setUser(await api<UserDetail>(`/api/v1/admin/users/${id}`));
   }
   useEffect(() => {
-    void load().catch((err: unknown) => setError(err instanceof ApiError ? err.message : "Could not load this user."));
+    void load().catch((err: unknown) => setError(err instanceof ApiError ? err.message : t("Could not load this user.")));
   }, [id]);
 
   async function act(action: Action) {
@@ -446,17 +447,17 @@ export function AdminUser() {
     setMessage("");
     try {
       await api(action.path, { method: "POST" });
-      setMessage(`${action.label}: action recorded.`);
+      setMessage(t("{action}: action recorded.", { action: action.label }));
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "The action was not applied.");
+      setError(err instanceof ApiError ? err.message : t("The action was not applied."));
     } finally {
       setConfirm(null);
     }
   }
 
   if (error && !user) return <Alert>{error}</Alert>;
-  if (!user) return <PageSkeleton label="Loading user…" />;
+  if (!user) return <PageSkeleton label={t("Loading user…")} />;
 
   const events = user.security_events ?? [];
   const base = `/api/v1/admin/users/${id}`;
@@ -466,34 +467,34 @@ export function AdminUser() {
       ? {
           key: "enable",
           path: `${base}/enable`,
-          label: "Enable",
-          title: "Enable this account?",
-          description: "The user will be able to sign in again.",
+          label: t("Enable"),
+          title: t("Enable this account?"),
+          description: t("The user will be able to sign in again."),
           icon: <CheckCircleIcon size={15} />,
         }
       : {
           key: "disable",
           path: `${base}/disable`,
-          label: "Disable",
-          title: "Disable this account?",
-          description: "The user is signed out everywhere and can’t sign in until the account is enabled again.",
+          label: t("Disable"),
+          title: t("Disable this account?"),
+          description: t("The user is signed out everywhere and can’t sign in until the account is enabled again."),
           icon: <BanIcon size={15} />,
           danger: true,
         },
     {
       key: "revoke",
       path: `${base}/revoke-sessions`,
-      label: "Revoke sessions",
-      title: "Revoke all sessions?",
-      description: "Every browser signed in to this account will be signed out.",
+      label: t("Revoke sessions"),
+      title: t("Revoke all sessions?"),
+      description: t("Every browser signed in to this account will be signed out."),
       icon: <DevicesIcon size={15} />,
     },
     {
       key: "reset",
       path: `${base}/force-password-reset`,
-      label: "Force password reset",
-      title: "Force a password reset?",
-      description: "The user must choose a new password at their next sign-in.",
+      label: t("Force password reset"),
+      title: t("Force a password reset?"),
+      description: t("The user must choose a new password at their next sign-in."),
       icon: <KeyIcon size={15} />,
       danger: true,
     },
@@ -503,7 +504,7 @@ export function AdminUser() {
     <div className="grid gap-6">
       <Link to="/admin/users" className="inline-flex w-fit items-center gap-1.5 text-[13px] font-medium text-muted transition-colors hover:text-ink">
         <ArrowLeftIcon size={14} />
-        All users
+        {t("All users")}
       </Link>
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center">
         <Avatar name={user.display_name || user.email} size={52} />
@@ -511,8 +512,8 @@ export function AdminUser() {
           <h1 className="truncate text-[24px] font-semibold leading-tight tracking-[-0.015em] text-ink">{user.email}</h1>
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <StatusBadge status={user.status} />
-            {user.email_verified ? <Badge tone="success">Email verified</Badge> : <Badge tone="warning">Email unverified</Badge>}
-            {user.must_reset_password ? <Badge tone="warning">Password reset pending</Badge> : null}
+            {user.email_verified ? <Badge tone="success">{t("Email verified")}</Badge> : <Badge tone="warning">{t("Email unverified")}</Badge>}
+            {user.must_reset_password ? <Badge tone="warning">{t("Password reset pending")}</Badge> : null}
           </div>
         </div>
       </header>
@@ -521,31 +522,31 @@ export function AdminUser() {
       {message ? <Alert tone="success">{message}</Alert> : null}
 
       <Card>
-        <CardHeader title="Details" />
+        <CardHeader title={t("Details")} />
         <dl className="mt-4 divide-y divide-line border-t border-line">
-          <Detail label="User ID">
+          <Detail label={t("User ID")}>
             <span className="flex flex-wrap items-center gap-2">
               <code className="break-all font-mono text-[13px]">{user.id}</code>
               <CopyButton value={user.id} />
             </span>
           </Detail>
-          <Detail label="Name">{user.display_name || <span className="text-muted">Not set</span>}</Detail>
-          <Detail label="Created">{formatWhen(user.created_at)}</Detail>
-          <Detail label="Last sign-in">{formatWhen(user.last_login_at)}</Detail>
-          <Detail label="Active sessions">
+          <Detail label={t("Name")}>{user.display_name || <span className="text-muted">{t("Not set")}</span>}</Detail>
+          <Detail label={t("Created")}>{formatWhen(user.created_at)}</Detail>
+          <Detail label={t("Last sign-in")}>{formatWhen(user.last_login_at)}</Detail>
+          <Detail label={t("Active sessions")}>
             <span className="tabular">{user.active_sessions ?? 0}</span>
           </Detail>
           {user.mfa ? (
-            <Detail label="Two-factor">
+            <Detail label={t("Two-factor")}>
               <span className="flex flex-wrap gap-1.5">
-                <Badge tone={user.mfa.totp_enabled ? "success" : "outline"}>Authenticator {user.mfa.totp_enabled ? "on" : "off"}</Badge>
-                <Badge tone={user.mfa.email_enabled ? "success" : "outline"}>Email codes {user.mfa.email_enabled ? "on" : "off"}</Badge>
-                {user.mfa.totp_enabled ? <Badge tone="neutral">{user.mfa.recovery_codes_remaining} recovery codes</Badge> : null}
+                <Badge tone={user.mfa.totp_enabled ? "success" : "outline"}>{user.mfa.totp_enabled ? t("Authenticator on") : t("Authenticator off")}</Badge>
+                <Badge tone={user.mfa.email_enabled ? "success" : "outline"}>{user.mfa.email_enabled ? t("Email codes on") : t("Email codes off")}</Badge>
+                {user.mfa.totp_enabled ? <Badge tone="neutral">{t("{count} recovery codes", { count: user.mfa.recovery_codes_remaining })}</Badge> : null}
               </span>
             </Detail>
           ) : null}
           {user.identities?.length ? (
-            <Detail label="Sign-in methods">
+            <Detail label={t("Sign-in methods")}>
               <span className="flex flex-wrap gap-1.5">
                 {user.identities.map((identity) => (
                   <Badge key={identity.provider} tone="neutral">
@@ -560,7 +561,7 @@ export function AdminUser() {
       </Card>
 
       <Card>
-        <CardHeader title="Actions" description="Every action is recorded in the security log." />
+        <CardHeader title={t("Actions")} description={t("Every action is recorded in the security log.")} />
         <div className="mt-4 divide-y divide-line border-t border-line">
           {actions.map((action) => (
             <div key={action.key} className="flex flex-col gap-3 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
@@ -584,9 +585,9 @@ export function AdminUser() {
       </Card>
 
       <Card>
-        <CardHeader title="Security activity" />
+        <CardHeader title={t("Security activity")} />
         <div className="mt-4 border-t border-line">
-          <ActivityList events={events} empty="This user has no recorded security events." />
+          <ActivityList events={events} empty={t("This user has no recorded security events.")} />
         </div>
       </Card>
 
@@ -601,8 +602,8 @@ export function AdminUser() {
             {confirm?.description} <span className="text-ink">{user.email}</span>
           </>
         }
-        confirmLabel={confirm?.label ?? "Confirm"}
-        pendingLabel="Applying…"
+        confirmLabel={confirm?.label ?? t("Confirm")}
+        pendingLabel={t("Applying…")}
         danger={confirm?.danger}
         onConfirm={() => (confirm ? act(confirm) : undefined)}
       />
@@ -626,7 +627,7 @@ export function AdminSecurity() {
       const body = await api<{ items: SecurityEvent[] }>(`/api/v1/admin/security-events${query}`);
       setItems(body.items);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not load events.");
+      setError(err instanceof ApiError ? err.message : t("Could not load events."));
       setItems((current) => current ?? []);
     }
   }
@@ -639,20 +640,20 @@ export function AdminSecurity() {
   return (
     <div className="grid gap-6">
       <PageTitle
-        title="Security"
-        detail="Authentication and administrative events. These records are not deleted from this screen."
+        title={t("Security")}
+        detail={t("Authentication and administrative events. These records are not deleted from this screen.")}
       />
       {error ? <Alert>{error}</Alert> : null}
       <Card>
         <div className="flex flex-col gap-2 border-b border-line p-3 sm:flex-row sm:items-center sm:p-4">
           <label className="relative flex-1">
-            <span className="sr-only">Event type</span>
+            <span className="sr-only">{t("Event type")}</span>
             <select
               value={eventType}
               onChange={(event) => setEventType(event.target.value)}
               className="h-10 w-full appearance-none rounded-[6px] border border-line-strong bg-white pl-3 pr-9 text-[14.5px] text-ink outline-none transition-[border-color,box-shadow] hover:border-[#c4beb3] focus:border-pine focus:shadow-[0_0_0_3px_rgb(31_61_50/0.12)]"
             >
-              <option value="">All event types</option>
+              <option value="">{t("All event types")}</option>
               {options.map((type) => (
                 <option key={type} value={type}>
                   {eventLabel(type)} ({type})
@@ -662,14 +663,14 @@ export function AdminSecurity() {
             <ChevronRightIcon className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rotate-90 text-faint" />
           </label>
           <Button type="button" variant="secondary" icon={<RefreshIcon size={15} />} onClick={() => void load(eventType)}>
-            Refresh
+            {t("Refresh")}
           </Button>
         </div>
         {!items ? (
           <TableSkeleton />
         ) : items.length === 0 ? (
-          <EmptyState icon={<ShieldIcon />} title="No events">
-            No security events match this filter.
+          <EmptyState icon={<ShieldIcon />} title={t("No events")}>
+            {t("No security events match this filter.")}
           </EmptyState>
         ) : (
           <ul className="divide-y divide-line">
@@ -693,10 +694,10 @@ export function AdminSecurity() {
                       {item.ip ? <span className="font-mono">{item.ip}</span> : null}
                       {item.target_user_id ? (
                         <Link className="hover:text-ink hover:underline" to={`/admin/users/${item.target_user_id}`}>
-                          User {item.target_user_id.slice(0, 8)}
+                          {t("User")}{' '}{item.target_user_id.slice(0, 8)}
                         </Link>
                       ) : null}
-                      {item.request_id ? <span className="font-mono">req {item.request_id}</span> : null}
+                      {item.request_id ? <span className="font-mono">req{' '}{item.request_id}</span> : null}
                     </p>
                   </div>
                 </div>
@@ -732,30 +733,30 @@ export function AdminLogs() {
     void api<{ items: MailLog[] }>("/api/v1/admin/logs")
       .then((body) => setItems(body.items))
       .catch((err: unknown) => {
-        setError(err instanceof ApiError ? err.message : "Could not load logs.");
+        setError(err instanceof ApiError ? err.message : t("Could not load logs."));
         setItems([]);
       });
   }, []);
   return (
     <div className="grid gap-6">
-      <PageTitle title="Logs" detail="Email delivery attempts. Message bodies are not shown." />
+      <PageTitle title={t("Logs")} detail={t("Email delivery attempts. Message bodies are not shown.")} />
       {error ? <Alert>{error}</Alert> : null}
       <Card>
         {!items ? (
           <TableSkeleton />
         ) : items.length === 0 ? (
-          <EmptyState icon={<MailIcon />} title="No email sent yet">
-            Delivery attempts will appear here.
+          <EmptyState icon={<MailIcon />} title={t("No email sent yet")}>
+            {t("Delivery attempts will appear here.")}
           </EmptyState>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
                 <tr className="border-b border-line bg-paper/70 text-[12px] uppercase tracking-[0.06em] text-muted">
-                  <th className="px-5 py-2.5 font-medium">Template</th>
-                  <th className="px-3 py-2.5 font-medium">Recipient</th>
-                  <th className="px-3 py-2.5 font-medium">Status</th>
-                  <th className="px-5 py-2.5 text-right font-medium">Sent</th>
+                  <th className="px-5 py-2.5 font-medium">{t("Template")}</th>
+                  <th className="px-3 py-2.5 font-medium">{t("Recipient")}</th>
+                  <th className="px-3 py-2.5 font-medium">{t("Status")}</th>
+                  <th className="px-5 py-2.5 text-right font-medium">{t("Sent")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">

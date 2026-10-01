@@ -1,3 +1,4 @@
+import { t } from "../lib/i18n";
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router";
 import { AuthHeading, AuthShell, TextLink } from "../components/shells";
@@ -16,7 +17,7 @@ function CheckingSession() {
     <div className="flex min-h-dvh items-center justify-center">
       <p role="status" className="flex items-center gap-2.5 text-sm text-muted">
         <Spinner size={16} className="text-pine" />
-        Checking your session…
+        {t("Checking your session…")}
       </p>
     </div>
   );
@@ -66,11 +67,11 @@ function SocialButtons({ returnTo }: { returnTo: string | null }) {
     <div className="grid grid-cols-2 gap-2.5">
       <a className={buttonClass("secondary", "md", "w-full")} href={social("google")}>
         <GoogleLogo size={16} />
-        Google
+        {t("Google")}
       </a>
       <a className={buttonClass("secondary", "md", "w-full")} href={social("github")}>
         <GitHubLogo size={16} />
-        GitHub
+        {t("GitHub")}
       </a>
     </div>
   );
@@ -115,7 +116,7 @@ export function SignInPage() {
       }
       continueAfterAuth(returnTo);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not sign in.");
+      setError(err instanceof ApiError ? err.message : t("Could not sign in."));
     } finally {
       setPending(false);
     }
@@ -127,37 +128,37 @@ export function SignInPage() {
     <AuthShell
       footer={
         <>
-          New to Knotree? <TextLink to="/sign-up">Create account</TextLink>
+          {t("New to Knotree?")}{' '}<TextLink to="/sign-up">{t("Create account")}</TextLink>
         </>
       }
     >
-      <AuthHeading title="Sign in">
+      <AuthHeading title={t("Sign in")}>
         {clientName ? (
           <>
-            to continue to <span className="font-medium text-ink">{clientName}</span>
+            {t("to continue to")}{' '}<span className="font-medium text-ink">{clientName}</span>
           </>
         ) : (
-          "Use your Knotree account."
+          t("Use your Knotree account.")
         )}
       </AuthHeading>
       <form className="grid gap-4" onSubmit={submit}>
         {error ? <Alert>{error}</Alert> : null}
         <TextField
-          label="Email"
+          label={t("Email")}
           name="email"
           type="email"
           autoComplete="username"
-          placeholder="you@example.com"
+          placeholder={t("you@example.com")}
           required
           autoFocus
           value={email}
           onChange={setEmail}
         />
         <TextField
-          label="Password"
+          label={t("Password")}
           labelAside={
             <TextLink to="/forgot-password" className="font-normal">
-              Forgot password?
+              {t("Forgot password?")}
             </TextLink>
           }
           name="password"
@@ -168,10 +169,10 @@ export function SignInPage() {
           onChange={setPassword}
         />
         <Button type="submit" size="lg" pending={pending} className="mt-1 w-full">
-          {pending ? "Signing in…" : "Continue"}
+          {pending ? t("Signing in…") : t("Continue")}
         </Button>
       </form>
-      <Divider>or</Divider>
+      <Divider>{t("or")}</Divider>
       <SocialButtons returnTo={returnTo} />
     </AuthShell>
   );
@@ -190,7 +191,7 @@ export function SignUpPage() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (password !== confirm) {
-      setError("Passwords do not match.");
+      setError(t("Passwords do not match."));
       return;
     }
     setPending(true);
@@ -203,7 +204,7 @@ export function SignUpPage() {
       sessionStorage.setItem("knotree.pending-email", email);
       navigate("/verify-email");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not create the account.");
+      setError(err instanceof ApiError ? err.message : t("Could not create the account."));
     } finally {
       setPending(false);
     }
@@ -215,19 +216,19 @@ export function SignUpPage() {
     <AuthShell
       footer={
         <>
-          Already have an account? <TextLink to="/sign-in">Sign in</TextLink>
+          {t("Already have an account?")}{' '}<TextLink to="/sign-in">{t("Sign in")}</TextLink>
         </>
       }
     >
-      <AuthHeading title="Create account">One Knotree account works across Knotree services.</AuthHeading>
+      <AuthHeading title={t("Create account")}>{t("One Knotree account works across Knotree services.")}</AuthHeading>
       <form className="grid gap-4" onSubmit={submit}>
         {error ? <Alert>{error}</Alert> : null}
         <TextField
-          label="Email"
+          label={t("Email")}
           name="email"
           type="email"
           autoComplete="email"
-          placeholder="you@example.com"
+          placeholder={t("you@example.com")}
           required
           autoFocus
           value={email}
@@ -235,7 +236,7 @@ export function SignUpPage() {
         />
         <div className="grid gap-2">
           <TextField
-            label="Password"
+            label={t("Password")}
             name="password"
             type="password"
             autoComplete="new-password"
@@ -246,20 +247,20 @@ export function SignUpPage() {
           <PasswordStrength value={password} />
         </div>
         <TextField
-          label="Confirm password"
+          label={t("Confirm password")}
           name="confirm"
           type="password"
           autoComplete="new-password"
           required
           value={confirm}
           onChange={setConfirm}
-          error={mismatch ? "Passwords do not match." : undefined}
+          error={mismatch ? t("Passwords do not match.") : undefined}
         />
         <Button type="submit" size="lg" pending={pending} className="mt-1 w-full">
-          {pending ? "Creating account…" : "Create account"}
+          {pending ? t("Creating account…") : t("Create account")}
         </Button>
       </form>
-      <Divider>or sign up with</Divider>
+      <Divider>{t("or sign up with")}</Divider>
       <SocialButtons returnTo={null} />
     </AuthShell>
   );
@@ -281,7 +282,7 @@ export function VerifyEmailPage() {
       .then(() => setState("verified"))
       .catch((err: unknown) => {
         setState("failed");
-        setError(err instanceof ApiError ? err.message : "This link is not valid.");
+        setError(err instanceof ApiError ? err.message : t("This link is not valid."));
       });
   }, [token]);
 
@@ -291,10 +292,10 @@ export function VerifyEmailPage() {
     setError("");
     try {
       await api("/api/v1/auth/email/resend", { method: "POST", body: JSON.stringify({ email }) });
-      setNotice("If an unverified account exists for this email, we sent a new link.");
+      setNotice(t("If an unverified account exists for this email, we sent a new link."));
       setCooldown(30);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not resend the email.");
+      setError(err instanceof ApiError ? err.message : t("Could not resend the email."));
     } finally {
       setPending(false);
     }
@@ -303,8 +304,8 @@ export function VerifyEmailPage() {
   if (state === "verifying") {
     return (
       <AuthShell>
-        <AuthHeading icon={<Spinner size={18} />} title="Verify your email">
-          Verifying your email…
+        <AuthHeading icon={<Spinner size={18} />} title={t("Verify your email")}>
+          {t("Verifying your email…")}
         </AuthHeading>
       </AuthShell>
     );
@@ -313,11 +314,11 @@ export function VerifyEmailPage() {
   if (state === "verified") {
     return (
       <AuthShell>
-        <AuthHeading icon={<CheckCircleIcon size={20} />} title="Verify your email">
-          Email verified. You can sign in.
+        <AuthHeading icon={<CheckCircleIcon size={20} />} title={t("Verify your email")}>
+          {t("Email verified. You can sign in.")}
         </AuthHeading>
         <a href="/sign-in" className={buttonClass("primary", "lg", "w-full")}>
-          Continue to sign in
+          {t("Continue to sign in")}
         </a>
       </AuthShell>
     );
@@ -328,16 +329,16 @@ export function VerifyEmailPage() {
       <AuthShell
         footer={
           <>
-            Need a new link? <TextLink to="/verify-email">Resend verification</TextLink>
+            {t("Need a new link?")}{' '}<TextLink to="/verify-email">{t("Resend verification")}</TextLink>
           </>
         }
       >
-        <AuthHeading icon={<AlertIcon size={20} />} title="Verify your email">
-          We couldn’t verify this link.
+        <AuthHeading icon={<AlertIcon size={20} />} title={t("Verify your email")}>
+          {t("We couldn’t verify this link.")}
         </AuthHeading>
         <Alert>{error}</Alert>
         <a href="/sign-in" className={buttonClass("secondary", "lg", "mt-5 w-full")}>
-          Back to sign in
+          {t("Back to sign in")}
         </a>
       </AuthShell>
     );
@@ -347,29 +348,28 @@ export function VerifyEmailPage() {
     <AuthShell
       footer={
         <>
-          Already verified? <TextLink to="/sign-in">Sign in</TextLink>
+          {t("Already verified?")}{' '}<TextLink to="/sign-in">{t("Sign in")}</TextLink>
         </>
       }
     >
-      <AuthHeading icon={<MailIcon size={20} />} title="Verify your email">
+      <AuthHeading icon={<MailIcon size={20} />} title={t("Verify your email")}>
         {email ? (
           <>
-            We sent a verification link to <span className="font-medium text-ink">{email}</span>. Open it to activate
-            your account.
+            {t("We sent a verification link to")}{' '}<span className="font-medium text-ink">{email}</span>{t(". Open it to activate your account.")}
           </>
         ) : (
-          "Check your inbox for a verification link."
+          t("Check your inbox for a verification link.")
         )}
       </AuthHeading>
       <form className="grid gap-4" onSubmit={resend}>
         {error ? <Alert>{error}</Alert> : null}
         {notice ? <Alert tone="success">{notice}</Alert> : null}
-        <TextField label="Email" name="email" type="email" required value={email} onChange={setEmail} />
+        <TextField label={t("Email")} name="email" type="email" required value={email} onChange={setEmail} />
         <Button type="submit" variant="secondary" size="lg" pending={pending} disabled={cooldown > 0} className="w-full">
-          {cooldown > 0 ? `Resend in ${cooldown}s` : pending ? "Sending…" : "Resend verification email"}
+          {cooldown > 0 ? t("Resend in {seconds}s", { seconds: cooldown }) : pending ? t("Sending…") : t("Resend verification email")}
         </Button>
       </form>
-      <p className="mt-5 text-[13px] text-muted">Can’t find it? Check spam or promotions. Links expire after a while.</p>
+      <p className="mt-5 text-[13px] text-muted">{t("Can’t find it? Check spam or promotions. Links expire after a while.")}</p>
     </AuthShell>
   );
 }
@@ -389,9 +389,9 @@ export function ForgotPasswordPage() {
         method: "POST",
         body: JSON.stringify({ email }),
       });
-      setMessage(body.message);
+      setMessage(t(body.message));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not send the email.");
+      setError(err instanceof ApiError ? err.message : t("Could not send the email."));
     } finally {
       setPending(false);
     }
@@ -401,39 +401,39 @@ export function ForgotPasswordPage() {
     <AuthShell
       footer={
         <>
-          Remembered it? <TextLink to="/sign-in">Back to sign in</TextLink>
+          {t("Remembered it?")}{' '}<TextLink to="/sign-in">{t("Back to sign in")}</TextLink>
         </>
       }
     >
       {message ? (
         <>
-          <AuthHeading icon={<MailIcon size={20} />} title="Check your email">
+          <AuthHeading icon={<MailIcon size={20} />} title={t("Check your email")}>
             {message}
           </AuthHeading>
           <Button type="button" variant="secondary" size="lg" className="w-full" onClick={() => setMessage("")}>
-            Use a different email
+            {t("Use a different email")}
           </Button>
         </>
       ) : (
         <>
-          <AuthHeading icon={<KeyIcon size={20} />} title="Reset password">
-            We’ll email a link if an account exists for this address.
+          <AuthHeading icon={<KeyIcon size={20} />} title={t("Reset password")}>
+            {t("We’ll email a link if an account exists for this address.")}
           </AuthHeading>
           <form className="grid gap-4" onSubmit={submit}>
             {error ? <Alert>{error}</Alert> : null}
             <TextField
-              label="Email"
+              label={t("Email")}
               name="email"
               type="email"
               autoComplete="email"
-              placeholder="you@example.com"
+              placeholder={t("you@example.com")}
               required
               autoFocus
               value={email}
               onChange={setEmail}
             />
             <Button type="submit" size="lg" pending={pending} className="w-full">
-              {pending ? "Sending…" : "Send reset link"}
+              {pending ? t("Sending…") : t("Send reset link")}
             </Button>
           </form>
         </>
@@ -461,7 +461,7 @@ export function ResetPasswordPage() {
       });
       setDone(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "This reset link is not valid.");
+      setError(err instanceof ApiError ? err.message : t("This reset link is not valid."));
     } finally {
       setPending(false);
     }
@@ -470,11 +470,11 @@ export function ResetPasswordPage() {
   if (done) {
     return (
       <AuthShell>
-        <AuthHeading icon={<CheckCircleIcon size={20} />} title="Password updated">
-          Your new password is set. Existing sessions were signed out.
+        <AuthHeading icon={<CheckCircleIcon size={20} />} title={t("Password updated")}>
+          {t("Your new password is set. Existing sessions were signed out.")}
         </AuthHeading>
         <a href="/sign-in" className={buttonClass("primary", "lg", "w-full")}>
-          Sign in
+          {t("Sign in")}
         </a>
       </AuthShell>
     );
@@ -484,18 +484,18 @@ export function ResetPasswordPage() {
     <AuthShell
       footer={
         <>
-          <TextLink to="/sign-in">Back to sign in</TextLink>
+          <TextLink to="/sign-in">{t("Back to sign in")}</TextLink>
         </>
       }
     >
-      <AuthHeading icon={<KeyIcon size={20} />} title="Choose a new password">
-        Pick something you don’t use anywhere else.
+      <AuthHeading icon={<KeyIcon size={20} />} title={t("Choose a new password")}>
+        {t("Pick something you don’t use anywhere else.")}
       </AuthHeading>
       <form className="grid gap-4" onSubmit={submit}>
         {error ? <Alert>{error}</Alert> : null}
         <div className="grid gap-2">
           <TextField
-            label="New password"
+            label={t("New password")}
             name="password"
             type="password"
             autoComplete="new-password"
@@ -507,7 +507,7 @@ export function ResetPasswordPage() {
           <PasswordStrength value={password} />
         </div>
         <Button type="submit" size="lg" pending={pending} className="w-full">
-          {pending ? "Updating…" : "Update password"}
+          {pending ? t("Updating…") : t("Update password")}
         </Button>
       </form>
     </AuthShell>

@@ -2,6 +2,7 @@ pub(crate) mod extract;
 mod routes;
 
 use crate::error::REQUEST_ID;
+use crate::i18n::{Locale, REQUEST_LOCALE};
 use crate::state::AppState;
 use axum::extract::Request;
 use axum::http::{header, HeaderName, HeaderValue, Method};
@@ -57,17 +58,25 @@ async fn request_context(req: Request, next: Next) -> Response {
     let started = Instant::now();
     let method = req.method().clone();
     let path = req.uri().path().to_string();
+    let locale = Locale::from_accept_language(
+        req.headers()
+            .get(header::ACCEPT_LANGUAGE)
+            .and_then(|value| value.to_str().ok()),
+    );
     let response = REQUEST_ID
-        .scope(request_id.clone(), async move {
-            extract::scope_cookie_renewal(async move {
-                let mut response = next.run(req).await;
-                if let Ok(value) = HeaderValue::from_str(&request_id) {
-                    response.headers_mut().insert("x-request-id", value);
-                }
-                response
-            })
-            .await
-        })
+        .scope(
+            request_id.clone(),
+            REQUEST_LOCALE.scope(locale, async move {
+                extract::scope_cookie_renewal(async move {
+                    let mut response = next.run(req).await;
+                    if let Ok(value) = HeaderValue::from_str(&request_id) {
+                        response.headers_mut().insert("x-request-id", value);
+                    }
+                    response
+                })
+                .await
+            }),
+        )
         .await;
     let status = response.status().as_u16().to_string();
     metrics::counter!("http_requests_total", "method" => method.to_string(), "status" => status)

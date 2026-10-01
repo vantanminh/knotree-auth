@@ -51,12 +51,13 @@ pub async fn register(
     let mut tx = state.db.begin().await?;
     let inserted = sqlx::query(
         r#"
-        INSERT INTO users (id, status, created_at, updated_at, password_changed_at)
-        VALUES ($1, 'active', $2, $2, $2)
+        INSERT INTO users (id, status, created_at, updated_at, password_changed_at, locale)
+        VALUES ($1, 'active', $2, $2, $2, $3)
         "#,
     )
     .bind(user_id)
     .bind(now)
+    .bind(meta.locale.as_str())
     .execute(&mut *tx)
     .await;
     if let Err(err) = inserted {
@@ -122,7 +123,9 @@ pub async fn register(
     tx.commit().await?;
 
     let link = format!("{}/verify-email?token={token}", state.config.app_base_url);
-    if let Err(err) = email::enqueue_and_send(state, &email, templates::verification(&link)).await {
+    if let Err(err) =
+        email::enqueue_and_send(state, &email, templates::verification(meta.locale, &link)).await
+    {
         tracing::error!(error = %err, "verification email failed");
     }
     rate_limit::record(state, "register", &format!("email:{email}"), meta.ip, true).await?;
@@ -249,6 +252,11 @@ pub async fn resend_verification(
     .execute(&state.db)
     .await?;
     let link = format!("{}/verify-email?token={token}", state.config.app_base_url);
-    email::enqueue_and_send(state, &email, templates::verification(&link)).await?;
+    email::enqueue_and_send(
+        state,
+        &email,
+        templates::verification(crate::i18n::user_locale(&state.db, user_id).await, &link),
+    )
+    .await?;
     Ok(())
 }

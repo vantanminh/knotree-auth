@@ -140,7 +140,13 @@ async fn notify_if_new_device(
         .map(|ip| ip.to_string())
         .unwrap_or_else(|| "unknown".into());
     let url = format!("{}/account/security", state.config.app_base_url);
-    let message = crate::email::templates::new_login(device, &when, &ip, &url);
+    let message = crate::email::templates::new_login(
+        crate::i18n::user_locale(&state.db, user_id).await,
+        device,
+        &when,
+        &ip,
+        &url,
+    );
     if let Err(err) = crate::email::enqueue_and_send(state, &email, message).await {
         tracing::error!(error = %err, "new login alert was not sent");
     }

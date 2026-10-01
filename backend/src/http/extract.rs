@@ -170,6 +170,7 @@ impl FromRequestParts<AppState> for Meta {
             request_id,
             ip,
             user_agent,
+            locale: crate::i18n::Locale::current(),
         }))
     }
 }

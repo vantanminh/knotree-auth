@@ -2,6 +2,7 @@ use super::session::{self, CurrentSession};
 use super::{apply_meta, ClientMeta, NewEvent};
 use crate::email::{self, templates};
 use crate::error::{is_unique_violation, AppError, AppResult};
+use crate::i18n::Locale;
 use crate::security::password::{normalize_email, validate_display_name};
 use crate::security::random::random_token;
 use crate::security::sha256;
@@ -18,9 +19,10 @@ pub async fn profile(state: &AppState, session: &CurrentSession) -> AppResult<Va
         DateTime<Utc>,
         Option<DateTime<Utc>>,
         String,
+        String,
     )> = sqlx::query_as(
         r#"
-        SELECT u.id, u.display_name, u.status, u.created_at, e.verified_at, e.email
+        SELECT u.id, u.display_name, u.status, u.created_at, e.verified_at, e.email, u.locale
         FROM users u
         JOIN user_emails e ON e.user_id = u.id AND e.is_primary
         WHERE u.id = $1
@@ -45,6 +47,7 @@ pub async fn profile(state: &AppState, session: &CurrentSession) -> AppResult<Va
         "status": row.2,
         "created_at": row.3,
         "email": row.5,
+        "locale": row.6,
         "email_verified": row.4.is_some(),
         "identities": identities.into_iter().map(|(provider, email)| json!({"provider": provider, "email": email})).collect::<Vec<_>>(),
         "mfa": mfa,
@@ -55,15 +58,30 @@ pub async fn profile(state: &AppState, session: &CurrentSession) -> AppResult<Va
 pub async fn update_profile(
     state: &AppState,
     user_id: Uuid,
-    display_name: &str,
+    display_name: Option<&str>,
+    locale: Option<&str>,
     meta: &ClientMeta,
 ) -> AppResult<()> {
-    let name = validate_display_name(display_name)?;
-    sqlx::query("UPDATE users SET display_name = $2, updated_at = now() WHERE id = $1")
-        .bind(user_id)
-        .bind(name)
-        .execute(&state.db)
-        .await?;
+    let locale = locale
+        .map(|value| {
+            Locale::parse(value).ok_or(AppError::Validation("Choose a supported language."))
+        })
+        .transpose()?;
+    if let Some(display_name) = display_name {
+        let name = validate_display_name(display_name)?;
+        sqlx::query("UPDATE users SET display_name = $2, updated_at = now() WHERE id = $1")
+            .bind(user_id)
+            .bind(name)
+            .execute(&state.db)
+            .await?;
+    }
+    if let Some(locale) = locale {
+        sqlx::query("UPDATE users SET locale = $2, updated_at = now() WHERE id = $1")
+            .bind(user_id)
+            .bind(locale.as_str())
+            .execute(&state.db)
+            .await?;
+    }
     let mut event = NewEvent::success("PROFILE_UPDATED", user_id);
     apply_meta(&mut event, meta);
     super::record(&state.db, event).await?;
@@ -102,7 +120,15 @@ pub async fn request_email_change(
     .execute(&state.db)
     .await?;
     let link = format!("{}/verify-email?token={token}", state.config.app_base_url);
-    email::enqueue_and_send(state, &email, templates::verification(&link)).await?;
+    email::enqueue_and_send(
+        state,
+        &email,
+        templates::verification(
+            crate::i18n::user_locale(&state.db, session.user_id).await,
+            &link,
+        ),
+    )
+    .await?;
     let mut event = NewEvent::success("EMAIL_CHANGE_REQUESTED", session.user_id);
     apply_meta(&mut event, meta);
     super::record(&state.db, event).await?;
@@ -171,7 +197,8 @@ pub async fn confirm_email_change(
             state,
             &old,
             templates::security_alert(
-                "The email address on your Knotree account was changed.",
+                crate::i18n::user_locale(&state.db, user_id).await,
+                templates::SecurityAlert::EmailChanged,
                 &format!("{}/account/security", state.config.app_base_url),
             ),
         )
