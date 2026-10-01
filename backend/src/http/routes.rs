@@ -69,6 +69,11 @@ pub fn api_routes() -> Router<AppState> {
             "/api/v1/me/sessions/revoke-others",
             post(account::revoke_others),
         )
+        .route("/api/v1/me/authorizations", get(account::authorizations))
+        .route(
+            "/api/v1/me/authorizations/{client_id}",
+            axum::routing::delete(account::revoke_authorization),
+        )
         .route("/api/v1/me/deletion", post(account::delete_account))
         .route(
             "/api/v1/me/identities/{provider}",

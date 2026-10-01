@@ -49,7 +49,7 @@ import {
 } from "../components/ui";
 import { ApiError, api } from "../lib/api";
 import { eventLabel, formatDate, formatRelative, formatWhen, isMobileDevice, providerLabel } from "../lib/format";
-import type { MfaSummary, SecurityEvent, SessionItem } from "../lib/types";
+import type { AuthorizationItem, MfaSummary, SecurityEvent, SessionItem } from "../lib/types";
 
 type Status = { tone: "success" | "error"; text: string } | null;
 
@@ -215,6 +215,12 @@ export function AccountHome() {
           icon={<LinkIcon />}
           title={t("Connected accounts")}
           detail={t("Sign in with Google or GitHub.")}
+        />
+        <Shortcut
+          to="/account/authorized-apps"
+          icon={<AppIcon />}
+          title={t("Authorized apps")}
+          detail={t("Services that can use your Knotree account.")}
         />
       </div>
 
@@ -1023,6 +1029,119 @@ export function SessionsPage() {
         confirmLabel={t("Sign out others")}
         pendingLabel={t("Signing out…")}
         onConfirm={revokeOthers}
+      />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Authorized apps                                                     */
+/* ------------------------------------------------------------------ */
+
+export function AuthorizedAppsPage() {
+  const [items, setItems] = useState<AuthorizationItem[] | null>(null);
+  const [error, setError] = useState("");
+  const [confirm, setConfirm] = useState<AuthorizationItem | null>(null);
+
+  async function load() {
+    const body = await api<{ items: AuthorizationItem[] }>("/api/v1/me/authorizations");
+    setItems(body.items);
+  }
+
+  useEffect(() => {
+    void load().catch((err: unknown) => setError(errorText(err, "Could not load authorized apps.")));
+  }, []);
+
+  async function revoke(item: AuthorizationItem) {
+    setError("");
+    try {
+      await api(`/api/v1/me/authorizations/${encodeURIComponent(item.client_id)}`, { method: "DELETE" });
+      await load();
+    } catch (err) {
+      setError(errorText(err, "Could not revoke access."));
+    } finally {
+      setConfirm(null);
+    }
+  }
+
+  return (
+    <div className="grid gap-6">
+      <PageTitle
+        title={t("Authorized apps")}
+        detail={t("Services you have signed in to with your Knotree account.")}
+      />
+      {error ? <Alert>{error}</Alert> : null}
+      <Card>
+        {!items ? (
+          <div className="divide-y divide-line">
+            {[0, 1, 2].map((key) => (
+              <div key={key} className="flex items-center gap-3 px-5 py-4 sm:px-6">
+                <Skeleton className="h-9 w-9" />
+                <div className="grid flex-1 gap-1.5">
+                  <Skeleton className="h-3.5 w-40" />
+                  <Skeleton className="h-3 w-56" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : items.length === 0 ? (
+          <EmptyState icon={<AppIcon />} title={t("No authorized apps")}>
+            {t("Services you sign in to with Knotree will appear here.")}
+          </EmptyState>
+        ) : (
+          <ul className="divide-y divide-line">
+            {items.map((item) => (
+              <li key={item.client_id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:px-6">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] border border-line bg-paper text-ink-soft">
+                  <AppIcon />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-ink">
+                    {item.name}
+                    {item.first_party ? <Badge tone="outline">{t("Knotree service")}</Badge> : null}
+                    {item.status === "disabled" ? <Badge tone="outline">{t("Disabled")}</Badge> : null}
+                  </p>
+                  <p className="mt-0.5 text-[13px] text-muted">
+                    <span title={formatWhen(item.granted_at)}>{t("Authorized")}{' '}{formatDate(item.granted_at)}</span>
+                    {item.last_used_at ? (
+                      <>
+                        <span className="mx-1.5 text-faint">·</span>
+                        <span title={formatWhen(item.last_used_at)}>{t("Last used")}{' '}{formatRelative(item.last_used_at)}</span>
+                      </>
+                    ) : null}
+                  </p>
+                  <p className="mt-1.5 flex flex-wrap gap-1.5">
+                    {item.scopes.map((scope) => (
+                      <span key={scope} className="rounded-[6px] border border-line bg-paper px-1.5 py-0.5 font-mono text-[11.5px] text-ink-soft">
+                        {scope}
+                      </span>
+                    ))}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  className="self-start sm:self-auto"
+                  onClick={() => setConfirm(item)}
+                >
+                  {t("Revoke access")}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <ConfirmDialog
+        open={confirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirm(null);
+        }}
+        title={t("Revoke access for {name}?", { name: confirm?.name ?? "" })}
+        description={t("You will be signed out of this service. It can ask for access again the next time you sign in.")}
+        confirmLabel={t("Revoke access")}
+        pendingLabel={t("Revoking…")}
+        onConfirm={() => (confirm ? revoke(confirm) : undefined)}
       />
     </div>
   );

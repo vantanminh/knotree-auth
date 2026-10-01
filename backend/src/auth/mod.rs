@@ -1,4 +1,5 @@
 mod account;
+mod authorizations;
 mod bootstrap;
 mod clients;
 mod events;
@@ -10,6 +11,7 @@ mod session;
 mod social;
 
 pub use account::*;
+pub use authorizations::*;
 pub use bootstrap::bootstrap_admin;
 pub use clients::ensure_dev_redirects;
 pub use events::{record, truncate_ua, NewEvent};

@@ -8,6 +8,7 @@ import {
   ProfilePage,
   SecurityPage,
   SessionsPage,
+  AuthorizedAppsPage,
 } from "./routes/account";
 import { AdminAnalytics, AdminLogs, AdminOverview, AdminSecurity, AdminUser, AdminUsers } from "./routes/admin";
 import { ForgotPasswordPage, HomePage, ResetPasswordPage, SignInPage, SignUpPage, VerifyEmailPage } from "./routes/auth";
@@ -38,6 +39,7 @@ const router = createBrowserRouter([
       { path: "security", element: <SecurityPage /> },
       { path: "sessions", element: <SessionsPage /> },
       { path: "connected-accounts", element: <ConnectedAccountsPage /> },
+      { path: "authorized-apps", element: <AuthorizedAppsPage /> },
     ],
   },
   {
