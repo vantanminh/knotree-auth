@@ -266,6 +266,17 @@ export function SignUpPage() {
   );
 }
 
+// The token is single-use. StrictMode runs effects twice in development, so share one request per token.
+const verifications = new Map<string, Promise<unknown>>();
+function verifyEmailOnce(token: string) {
+  let request = verifications.get(token);
+  if (!request) {
+    request = api("/api/v1/auth/email/verify", { method: "POST", body: JSON.stringify({ token }) });
+    verifications.set(token, request);
+  }
+  return request;
+}
+
 export function VerifyEmailPage() {
   const [params] = useSearchParams();
   const token = params.get("token") ?? "";
@@ -278,12 +289,19 @@ export function VerifyEmailPage() {
 
   useEffect(() => {
     if (!token) return;
-    void api("/api/v1/auth/email/verify", { method: "POST", body: JSON.stringify({ token }) })
-      .then(() => setState("verified"))
+    let active = true;
+    verifyEmailOnce(token)
+      .then(() => {
+        if (active) setState("verified");
+      })
       .catch((err: unknown) => {
+        if (!active) return;
         setState("failed");
         setError(err instanceof ApiError ? err.message : t("This link is not valid."));
       });
+    return () => {
+      active = false;
+    };
   }, [token]);
 
   async function resend(event: React.FormEvent) {
