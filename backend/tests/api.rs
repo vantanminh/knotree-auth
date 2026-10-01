@@ -522,7 +522,8 @@ async fn identity_platform_flows() {
     let study = &clients.json["items"][0];
     assert_eq!(study["id"], "knotree-study");
     assert_eq!(study["client_type"], "public");
-    assert!(study["authorized_users"].as_i64().unwrap() >= 1);
+    // The user revoked their consent above; the authorization history remains.
+    assert_eq!(study["authorized_users"], 0);
     assert!(study["last_authorized_at"].is_string());
     assert!(study.get("secret_hash").is_none());
     let filtered = api
@@ -532,11 +533,7 @@ async fn identity_platform_flows() {
     let detail = api.get("/api/v1/admin/clients/knotree-study").await;
     assert_eq!(detail.status, StatusCode::OK, "{}", detail.text);
     assert_eq!(detail.json["name"], "Knotree Study");
-    assert!(detail.json["recent_consents"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|item| item["email"] == email.as_str()));
+    assert_eq!(detail.json["recent_consents"], json!([]));
     let missing = api.get("/api/v1/admin/clients/no-such-client").await;
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
     let users = api.get("/api/v1/admin/users?q=ada").await;
