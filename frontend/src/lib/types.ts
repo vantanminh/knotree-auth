@@ -8,6 +8,7 @@ export type Profile = {
   identities: { provider: string; email: string | null }[];
   mfa: MfaSummary;
   is_admin: boolean;
+  locale?: "en" | "vi";
 };
 
 export type MfaSummary = {

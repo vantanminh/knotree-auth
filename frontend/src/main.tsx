@@ -13,6 +13,7 @@ import { AdminLogs, AdminOverview, AdminSecurity, AdminUser, AdminUsers } from "
 import { ForgotPasswordPage, HomePage, ResetPasswordPage, SignInPage, SignUpPage, VerifyEmailPage } from "./routes/auth";
 import { MfaPage } from "./routes/mfa";
 import { ConsentPage, OAuthErrorPage } from "./routes/oauth";
+import { useLocale } from "./lib/i18n";
 import "./styles.css";
 
 const router = createBrowserRouter([
@@ -52,8 +53,14 @@ const router = createBrowserRouter([
   },
 ]);
 
+// Remount on language change so every screen re-renders in the new language.
+function App() {
+  const locale = useLocale();
+  return <RouterProvider key={locale} router={router} />;
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    <App />
   </StrictMode>,
 );

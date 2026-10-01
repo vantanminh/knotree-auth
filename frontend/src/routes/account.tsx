@@ -1,6 +1,7 @@
+import { t } from "../lib/i18n";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { useProfile } from "../components/shells";
+import { LanguageSwitcher, useProfile } from "../components/shells";
 import {
   AlertIcon,
   AppIcon,
@@ -8,6 +9,7 @@ import {
   ChevronRightIcon,
   DevicesIcon,
   DownloadIcon,
+  GlobeIcon,
   GitHubLogo,
   GoogleLogo,
   KeyIcon,
@@ -52,7 +54,7 @@ import type { MfaSummary, SecurityEvent, SessionItem } from "../lib/types";
 type Status = { tone: "success" | "error"; text: string } | null;
 
 function errorText(err: unknown, fallback: string) {
-  return err instanceof ApiError ? err.message : fallback;
+  return err instanceof ApiError ? err.message : t(fallback);
 }
 
 function StatusLine({ status }: { status: Status }) {
@@ -113,7 +115,7 @@ function Shortcut({ to, icon, title, detail }: { to: string; icon: ReactNode; ti
 export function AccountHome() {
   const { profile, error } = useProfile();
   if (error) return <Alert>{error}</Alert>;
-  if (!profile) return <PageSkeleton label="Loading account…" />;
+  if (!profile) return <PageSkeleton label={t("Loading account…")} />;
 
   const twoFactor = profile.mfa.totp_enabled || profile.mfa.email_enabled;
   const recoveryReady = !profile.mfa.totp_enabled || profile.mfa.recovery_codes_remaining > 0;
@@ -122,7 +124,7 @@ export function AccountHome() {
 
   return (
     <div className="grid gap-6">
-      <PageTitle title={profile.display_name || "Account"} detail="Manage your Knotree identity, security, and signed-in devices." />
+      <PageTitle title={profile.display_name || t("Account")} detail={t("Manage your Knotree identity, security, and signed-in devices.")} />
 
       <Card>
         <div className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:px-6">
@@ -132,19 +134,19 @@ export function AccountHome() {
               <p className="truncate text-[15px] font-medium text-ink">{profile.email}</p>
               {profile.email_verified ? (
                 <Badge tone="success" dot>
-                  Verified
+                  {t("Verified")}
                 </Badge>
               ) : (
                 <Badge tone="warning" dot>
-                  Unverified
+                  {t("Unverified")}
                 </Badge>
               )}
-              {profile.is_admin ? <Badge tone="outline">Administrator</Badge> : null}
+              {profile.is_admin ? <Badge tone="outline">{t("Administrator")}</Badge> : null}
             </div>
-            <p className="mt-0.5 text-[13px] text-muted">Member since {formatDate(profile.created_at)}</p>
+            <p className="mt-0.5 text-[13px] text-muted">{t("Member since")}{' '}{formatDate(profile.created_at)}</p>
           </div>
           <Link to="/account/profile" className={buttonClass("secondary", "md", "self-start sm:self-auto")}>
-            Edit profile
+            {t("Edit profile")}
           </Link>
         </div>
       </Card>
@@ -152,11 +154,11 @@ export function AccountHome() {
       <Card>
         <CardHeader
           icon={<ShieldCheckIcon />}
-          title="Security checkup"
+          title={t("Security checkup")}
           description={
             done === checks.length
-              ? "Your account follows every recommendation."
-              : `${done} of ${checks.length} recommendations complete.`
+              ? t("Your account follows every recommendation.")
+              : t("{done} of {total} recommendations complete.", { done, total: checks.length })
           }
           action={
             <span className="tabular hidden text-[13px] font-medium text-muted sm:inline">
@@ -175,29 +177,29 @@ export function AccountHome() {
         <div className="mt-3 divide-y divide-line border-t border-line">
           <CheckItem
             done={profile.email_verified}
-            title="Email address"
-            detail={profile.email_verified ? "Verified and ready for account recovery." : "Verify your email to recover your account."}
+            title={t("Email address")}
+            detail={profile.email_verified ? t("Verified and ready for account recovery.") : t("Verify your email to recover your account.")}
             to="/account/profile"
           />
           <CheckItem
             done={twoFactor}
-            title="Two-factor authentication"
+            title={t("Two-factor authentication")}
             detail={
               profile.mfa.totp_enabled
-                ? "Authenticator app is on."
+                ? t("Authenticator app is on.")
                 : profile.mfa.email_enabled
-                  ? "Email codes are on. An authenticator app is stronger."
-                  : "Add a second step when you sign in."
+                  ? t("Email codes are on. An authenticator app is stronger.")
+                  : t("Add a second step when you sign in.")
             }
             to="/account/security"
           />
           <CheckItem
             done={recoveryReady}
-            title="Recovery codes"
+            title={t("Recovery codes")}
             detail={
               profile.mfa.totp_enabled
-                ? `${profile.mfa.recovery_codes_remaining} unused codes available.`
-                : "Generated when you turn on an authenticator app."
+                ? t("{count} unused codes available.", { count: profile.mfa.recovery_codes_remaining })
+                : t("Generated when you turn on an authenticator app.")
             }
             to="/account/security"
           />
@@ -205,14 +207,14 @@ export function AccountHome() {
       </Card>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Shortcut to="/account/profile" icon={<UserIcon />} title="Profile" detail="Name and email address." />
-        <Shortcut to="/account/security" icon={<LockIcon />} title="Security" detail="Password, two-factor, and activity." />
-        <Shortcut to="/account/sessions" icon={<DevicesIcon />} title="Sessions" detail="Devices signed in to your account." />
+        <Shortcut to="/account/profile" icon={<UserIcon />} title={t("Profile")} detail={t("Name and email address.")} />
+        <Shortcut to="/account/security" icon={<LockIcon />} title={t("Security")} detail={t("Password, two-factor, and activity.")} />
+        <Shortcut to="/account/sessions" icon={<DevicesIcon />} title={t("Sessions")} detail={t("Devices signed in to your account.")} />
         <Shortcut
           to="/account/connected-accounts"
           icon={<LinkIcon />}
-          title="Connected accounts"
-          detail="Sign in with Google or GitHub."
+          title={t("Connected accounts")}
+          detail={t("Sign in with Google or GitHub.")}
         />
       </div>
 
@@ -223,8 +225,8 @@ export function AccountHome() {
         >
           <AppIcon className="text-pine" />
           <span className="flex-1">
-            <span className="font-medium text-ink">Open administration</span>
-            <span className="text-muted"> · Users, security events, and email logs</span>
+            <span className="font-medium text-ink">{t("Open administration")}</span>
+            <span className="text-muted">{' '}{t("· Users, security events, and email logs")}</span>
           </span>
           <ChevronRightIcon className="text-faint transition-transform group-hover:translate-x-0.5" />
         </Link>
@@ -250,7 +252,7 @@ export function ProfilePage() {
   }, [profile]);
 
   if (error) return <Alert>{error}</Alert>;
-  if (!profile) return <PageSkeleton label="Loading profile…" />;
+  if (!profile) return <PageSkeleton label={t("Loading profile…")} />;
 
   async function saveName(event: React.FormEvent) {
     event.preventDefault();
@@ -259,7 +261,7 @@ export function ProfilePage() {
     try {
       await api("/api/v1/me/profile", { method: "PATCH", body: JSON.stringify({ display_name: name }) });
       await reload();
-      setNameStatus({ tone: "success", text: "Name updated." });
+      setNameStatus({ tone: "success", text: t("Name updated.") });
     } catch (err) {
       setNameStatus({ tone: "error", text: errorText(err, "Could not update your name.") });
     } finally {
@@ -273,7 +275,7 @@ export function ProfilePage() {
     setEmailStatus(null);
     try {
       await api("/api/v1/me/email", { method: "POST", body: JSON.stringify({ email }) });
-      setEmailStatus({ tone: "success", text: "Check the new address for a verification link." });
+      setEmailStatus({ tone: "success", text: t("Check the new address for a verification link.") });
       setEmail("");
     } catch (err) {
       setEmailStatus({ tone: "error", text: errorText(err, "Could not change the email.") });
@@ -286,30 +288,30 @@ export function ProfilePage() {
 
   return (
     <div className="grid gap-6">
-      <PageTitle title="Profile" detail="Name and email for your Knotree account." />
+      <PageTitle title={t("Profile")} detail={t("Name and email for your Knotree account.")} />
 
       <Card>
         <form onSubmit={saveName}>
-          <CardHeader title="Display name" description="Shown to Knotree services you sign in to." />
+          <CardHeader title={t("Display name")} description={t("Shown to Knotree services you sign in to.")} />
           <CardBody>
             <StatusLine status={nameStatus} />
             <div className="flex items-end gap-4">
               <Avatar name={name || profile.email} size={40} />
               <TextField
                 className="flex-1"
-                label="Name"
+                label={t("Name")}
                 name="name"
                 autoComplete="name"
-                placeholder="Your name"
+                placeholder={t("Your name")}
                 value={name}
                 onChange={setName}
                 required
               />
             </div>
           </CardBody>
-          <CardFooter note="Use the name people know you by.">
+          <CardFooter note={t("Use the name people know you by.")}>
             <Button type="submit" pending={pending === "name"} disabled={nameUnchanged || !name.trim()}>
-              {pending === "name" ? "Saving…" : "Save name"}
+              {pending === "name" ? t("Saving…") : t("Save name")}
             </Button>
           </CardFooter>
         </form>
@@ -317,44 +319,60 @@ export function ProfilePage() {
 
       <Card>
         <form onSubmit={changeEmail}>
-          <CardHeader title="Email address" description="Used to sign in and to recover your account." />
+          <CardHeader title={t("Email address")} description={t("Used to sign in and to recover your account.")} />
           <CardBody className="grid gap-5">
             <div className="flex flex-wrap items-center gap-3 rounded-[8px] border border-line bg-paper/70 px-3.5 py-3">
               <MailIcon className="text-faint" />
               <span className="min-w-0 flex-1 truncate text-sm text-ink">{profile.email}</span>
               {profile.email_verified ? (
                 <Badge tone="success" dot>
-                  Verified
+                  {t("Verified")}
                 </Badge>
               ) : (
                 <Badge tone="warning" dot>
-                  Unverified
+                  {t("Unverified")}
                 </Badge>
               )}
             </div>
             <div>
               <StatusLine status={emailStatus} />
               <TextField
-                label="New email"
+                label={t("New email")}
                 name="email"
                 type="email"
                 autoComplete="email"
-                placeholder="new@example.com"
+                placeholder={t("new@example.com")}
                 value={email}
                 onChange={setEmail}
               />
             </div>
           </CardBody>
-          <CardFooter note="Requires a recent sign-in. We’ll send a link to the new address.">
+          <CardFooter note={t("Requires a recent sign-in. We’ll send a link to the new address.")}>
             <Button type="submit" variant="secondary" pending={pending === "email"} disabled={!email}>
-              {pending === "email" ? "Sending…" : "Send verification"}
+              {pending === "email" ? t("Sending…") : t("Send verification")}
             </Button>
           </CardFooter>
         </form>
       </Card>
 
+      <LanguageCard />
+
       <DeleteAccount />
     </div>
+  );
+}
+
+function LanguageCard() {
+  return (
+    <Card>
+      <CardHeader
+        icon={<GlobeIcon />}
+        title={t("Language")}
+        description={t("Used for this site, emails, and security notifications.")}
+        action={<LanguageSwitcher signedIn />}
+      />
+      <div className="h-5" />
+    </Card>
   );
 }
 
@@ -374,8 +392,8 @@ export function DeleteAccount() {
   return (
     <Card tone="danger">
       <CardHeader
-        title="Delete account"
-        description="Permanently remove your Knotree account. You will be signed out of every Knotree service."
+        title={t("Delete account")}
+        description={t("Permanently remove your Knotree account. You will be signed out of every Knotree service.")}
       />
       {error ? (
         <CardBody className="pt-4">
@@ -384,19 +402,19 @@ export function DeleteAccount() {
       ) : (
         <div className="h-5" />
       )}
-      <CardFooter note="This cannot be undone from the product.">
+      <CardFooter note={t("This cannot be undone from the product.")}>
         <Button type="button" variant="danger" icon={<TrashIcon size={15} />} onClick={() => setOpen(true)}>
-          Delete account
+          {t("Delete account")}
         </Button>
       </CardFooter>
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}
         danger
-        title="Delete this Knotree account?"
-        description="Sessions will end and applications using Knotree sign-in will lose access. This cannot be undone from the product."
-        confirmLabel="Delete account"
-        pendingLabel="Deleting…"
+        title={t("Delete this Knotree account?")}
+        description={t("Sessions will end and applications using Knotree sign-in will lose access. This cannot be undone from the product.")}
+        confirmLabel={t("Delete account")}
+        pendingLabel={t("Deleting…")}
         onConfirm={remove}
       />
     </Card>
@@ -409,7 +427,7 @@ export function DeleteAccount() {
 
 function downloadCodes(codes: string[]) {
   const blob = new Blob(
-    [`Knotree recovery codes\nGenerated ${new Date().toISOString()}\n\nEach code works once.\n\n${codes.join("\n")}\n`],
+    [`${t("Knotree recovery codes")}\n${t("Generated {date}", { date: new Date().toISOString() })}\n\n${t("Each code works once.")}\n\n${codes.join("\n")}\n`],
     { type: "text/plain" },
   );
   const url = URL.createObjectURL(blob);
@@ -424,8 +442,8 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
   const [saved, setSaved] = useState(false);
   return (
     <div className="mx-5 mb-5 animate-fade-up rounded-[8px] border border-amber-line bg-amber-soft/50 p-4 sm:mx-6">
-      <p className="text-sm font-medium text-ink">Save your recovery codes</p>
-      <p className="mt-0.5 text-[13px] text-muted">Each code works once. This is the only time they are shown.</p>
+      <p className="text-sm font-medium text-ink">{t("Save your recovery codes")}</p>
+      <p className="mt-0.5 text-[13px] text-muted">{t("Each code works once. This is the only time they are shown.")}</p>
       <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-[6px] border border-line bg-white px-4 py-3 font-mono text-[14px] text-ink sm:grid-cols-2">
         {codes.map((item) => (
           <li key={item} className="tabular">
@@ -434,17 +452,17 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
         ))}
       </ul>
       <div className="mt-3 flex flex-wrap gap-2">
-        <CopyButton value={codes.join("\n")} label="Copy all" />
+        <CopyButton value={codes.join("\n")} label={t("Copy all")} />
         <Button type="button" variant="secondary" size="sm" icon={<DownloadIcon size={14} />} onClick={() => downloadCodes(codes)}>
-          Download
+          {t("Download")}
         </Button>
       </div>
       <div className="mt-4 flex flex-col gap-3 border-t border-amber-line/70 pt-4 sm:flex-row sm:items-center sm:justify-between">
         <Checkbox checked={saved} onCheckedChange={setSaved}>
-          I have saved these codes
+          {t("I have saved these codes")}
         </Checkbox>
         <Button type="button" disabled={!saved} onClick={onDone}>
-          Continue
+          {t("Continue")}
         </Button>
       </div>
     </div>
@@ -452,7 +470,7 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
 }
 
 export function ActivityList({ events, empty }: { events: SecurityEvent[]; empty: string }) {
-  if (events.length === 0) return <EmptyState icon={<ShieldIcon />} title="No activity yet">{empty}</EmptyState>;
+  if (events.length === 0) return <EmptyState icon={<ShieldIcon />} title={t("No activity yet")}>{empty}</EmptyState>;
   return (
     <ol className="divide-y divide-line">
       {events.map((event) => (
@@ -535,7 +553,7 @@ export function SecurityPage() {
           method: "POST",
           body: JSON.stringify({ password: stepPassword, code: stepCode || undefined, method: "totp" }),
         });
-        setStepStatus({ tone: "success", text: "Confirmed. You can continue with the sensitive change." });
+        setStepStatus({ tone: "success", text: t("Confirmed. You can continue with the sensitive change.") });
         setStepPassword("");
         setStepCode("");
       } catch (err) {
@@ -553,7 +571,7 @@ export function SecurityPage() {
           method: "POST",
           body: JSON.stringify({ current_password: password, new_password: nextPassword }),
         });
-        setPasswordStatus({ tone: "success", text: "Password changed. Other sessions were signed out." });
+        setPasswordStatus({ tone: "success", text: t("Password changed. Other sessions were signed out.") });
         setPassword("");
         setNextPassword("");
         await load();
@@ -586,7 +604,7 @@ export function SecurityPage() {
         });
         setRecovery(body.recovery_codes);
         setSetup(null);
-        setMfaStatus({ tone: "success", text: "Authenticator enabled." });
+        setMfaStatus({ tone: "success", text: t("Authenticator enabled.") });
         await load();
       } catch (err) {
         setMfaStatus({ tone: "error", text: errorText(err, "That code is not valid.") });
@@ -605,7 +623,7 @@ export function SecurityPage() {
         });
         setDisableCode("");
         setDisabling(false);
-        setMfaStatus({ tone: "success", text: "Authenticator disabled." });
+        setMfaStatus({ tone: "success", text: t("Authenticator disabled.") });
         await load();
       } catch (err) {
         setMfaStatus({ tone: "error", text: errorText(err, "Could not disable the authenticator.") });
@@ -638,27 +656,27 @@ export function SecurityPage() {
     }
   }
 
-  if (!summary && !loadError) return <PageSkeleton label="Loading security…" />;
+  if (!summary && !loadError) return <PageSkeleton label={t("Loading security…")} />;
 
   const remaining = summary?.recovery_codes_remaining ?? 0;
 
   return (
     <div className="grid gap-6">
-      <PageTitle title="Security" detail="Password, two-factor authentication, and recent activity." />
+      <PageTitle title={t("Security")} detail={t("Password, two-factor authentication, and recent activity.")} />
       {loadError ? <Alert>{loadError}</Alert> : null}
 
       <Card>
         <form onSubmit={elevate}>
           <CardHeader
             icon={<ShieldCheckIcon />}
-            title="Confirm it’s you"
-            description="Sensitive changes ask for your password again, and an authenticator code when one is enabled."
+            title={t("Confirm it’s you")}
+            description={t("Sensitive changes ask for your password again, and an authenticator code when one is enabled.")}
           />
           <CardBody>
             <StatusLine status={stepStatus} />
             <div className="grid gap-4 sm:grid-cols-2">
               <TextField
-                label="Password"
+                label={t("Password")}
                 name="step-password"
                 type="password"
                 autoComplete="current-password"
@@ -666,11 +684,11 @@ export function SecurityPage() {
                 onChange={setStepPassword}
               />
               <TextField
-                label="Authenticator code"
+                label={t("Authenticator code")}
                 name="step-code"
                 autoComplete="one-time-code"
                 inputMode="numeric"
-                placeholder={summary?.totp_enabled ? "000000" : "Not required"}
+                placeholder={summary?.totp_enabled ? "000000" : t("Not required")}
                 disabled={!summary?.totp_enabled}
                 mono={summary?.totp_enabled}
                 value={stepCode}
@@ -678,9 +696,9 @@ export function SecurityPage() {
               />
             </div>
           </CardBody>
-          <CardFooter note="Confirmation lasts a few minutes.">
+          <CardFooter note={t("Confirmation lasts a few minutes.")}>
             <Button type="submit" variant="secondary" pending={pending === "step"} disabled={!stepPassword}>
-              {pending === "step" ? "Confirming…" : "Confirm"}
+              {pending === "step" ? t("Confirming…") : t("Confirm")}
             </Button>
           </CardFooter>
         </form>
@@ -690,14 +708,14 @@ export function SecurityPage() {
         <form onSubmit={changePassword}>
           <CardHeader
             icon={<KeyIcon />}
-            title="Password"
-            description={<>Last changed {formatWhen(summary?.password_changed_at)}</>}
+            title={t("Password")}
+            description={<>{t("Last changed")}{' '}{formatWhen(summary?.password_changed_at)}</>}
           />
           <CardBody>
             <StatusLine status={passwordStatus} />
             <div className="grid gap-4 sm:grid-cols-2">
               <TextField
-                label="Current password"
+                label={t("Current password")}
                 name="current"
                 type="password"
                 autoComplete="current-password"
@@ -706,7 +724,7 @@ export function SecurityPage() {
               />
               <div className="grid content-start gap-2">
                 <TextField
-                  label="New password"
+                  label={t("New password")}
                   name="next"
                   type="password"
                   autoComplete="new-password"
@@ -717,9 +735,9 @@ export function SecurityPage() {
               </div>
             </div>
           </CardBody>
-          <CardFooter note="Other sessions are signed out after a change.">
+          <CardFooter note={t("Other sessions are signed out after a change.")}>
             <Button type="submit" pending={pending === "password"} disabled={!password || !nextPassword}>
-              {pending === "password" ? "Changing…" : "Change password"}
+              {pending === "password" ? t("Changing…") : t("Change password")}
             </Button>
           </CardFooter>
         </form>
@@ -728,8 +746,8 @@ export function SecurityPage() {
       <Card>
         <CardHeader
           icon={<LockIcon />}
-          title="Two-factor authentication"
-          description="Add a second step when you sign in, so a password alone is not enough."
+          title={t("Two-factor authentication")}
+          description={t("Add a second step when you sign in, so a password alone is not enough.")}
         />
         <div className="mt-5 border-t border-line">
           {mfaStatus ? (
@@ -742,27 +760,27 @@ export function SecurityPage() {
               icon={<SmartphoneCodeIcon />}
               title={
                 <>
-                  Authenticator app
+                  {t("Authenticator app")}
                   {summary?.totp_enabled ? (
                     <Badge tone="success" dot>
-                      Enabled
+                      {t("Enabled")}
                     </Badge>
                   ) : (
-                    <Badge tone="outline">Disabled</Badge>
+                    <Badge tone="outline">{t("Disabled")}</Badge>
                   )}
                 </>
               }
-              description="Codes from an app like 1Password, Google Authenticator, or Authy."
+              description={t("Codes from an app like 1Password, Google Authenticator, or Authy.")}
               aside={
                 summary?.totp_enabled ? (
                   disabling ? null : (
                     <Button type="button" variant="danger" size="sm" onClick={() => setDisabling(true)}>
-                      Disable
+                      {t("Disable")}
                     </Button>
                   )
                 ) : setup ? null : (
                   <Button type="button" variant="secondary" size="sm" pending={pending === "totp-begin"} onClick={beginTotp}>
-                    Enable
+                    {t("Enable")}
                   </Button>
                 )
               }
@@ -778,12 +796,12 @@ export function SecurityPage() {
                             <span className="tabular flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-line-strong bg-white text-[11px] font-medium text-muted">
                               {index + 1}
                             </span>
-                            {step}
+                            {t(step)}
                           </li>
                         ))}
                       </ol>
                       <div>
-                        <p className="text-[13px] text-muted">Can’t scan? Enter this setup key manually:</p>
+                        <p className="text-[13px] text-muted">{t("Can’t scan? Enter this setup key manually:")}</p>
                         <div className="mt-1.5 flex flex-wrap items-center gap-2">
                           <code className="break-all rounded-[6px] border border-line bg-white px-2 py-1 font-mono text-[13px] tracking-wide text-ink">
                             {setup.secret}
@@ -794,13 +812,13 @@ export function SecurityPage() {
                     </div>
                   </div>
                   <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                    <CodeField label="6-digit code" name="totp" value={setupCode} onChange={setSetupCode} />
+                    <CodeField label={t("6-digit code")} name="totp" value={setupCode} onChange={setSetupCode} />
                     <div className="flex gap-2">
                       <Button type="button" variant="ghost" size="lg" onClick={() => setSetup(null)}>
-                        Cancel
+                        {t("Cancel")}
                       </Button>
                       <Button type="submit" size="lg" pending={pending === "totp-confirm"} disabled={setupCode.length < 6}>
-                        Enable authenticator
+                        {t("Enable authenticator")}
                       </Button>
                     </div>
                   </div>
@@ -808,13 +826,13 @@ export function SecurityPage() {
               ) : null}
               {summary?.totp_enabled && disabling ? (
                 <form className="mt-4 grid animate-fade-up gap-3 rounded-[8px] border border-danger-line bg-danger-soft/40 p-4 sm:grid-cols-[1fr_auto] sm:items-end" onSubmit={disableTotp}>
-                  <CodeField label="Current authenticator code" name="disable" autoFocus value={disableCode} onChange={setDisableCode} />
+                  <CodeField label={t("Current authenticator code")} name="disable" autoFocus value={disableCode} onChange={setDisableCode} />
                   <div className="flex gap-2">
                     <Button type="button" variant="ghost" size="lg" onClick={() => setDisabling(false)}>
-                      Cancel
+                      {t("Cancel")}
                     </Button>
                     <Button type="submit" variant="danger-solid" size="lg" pending={pending === "totp-disable"}>
-                      Disable authenticator
+                      {t("Disable authenticator")}
                     </Button>
                   </div>
                 </form>
@@ -822,11 +840,11 @@ export function SecurityPage() {
             </Row>
             <Row
               icon={<MailIcon />}
-              title="Email verification code"
-              description={summary?.email_enabled ? "A code is emailed to you at sign-in." : "Available. Receive a code by email at sign-in."}
+              title={t("Email verification code")}
+              description={summary?.email_enabled ? t("A code is emailed to you at sign-in.") : t("Available. Receive a code by email at sign-in.")}
               aside={
                 <Switch
-                  label="Email verification code"
+                  label={t("Email verification code")}
                   checked={Boolean(summary?.email_enabled)}
                   disabled={pending === "email"}
                   onCheckedChange={toggleEmail}
@@ -837,16 +855,16 @@ export function SecurityPage() {
               icon={<KeyIcon />}
               title={
                 <>
-                  Recovery codes
+                  {t("Recovery codes")}
                   {summary?.totp_enabled ? (
-                    <Badge tone={remaining === 0 ? "danger" : remaining < 3 ? "warning" : "neutral"}>{remaining} remaining</Badge>
+                    <Badge tone={remaining === 0 ? "danger" : remaining < 3 ? "warning" : "neutral"}>{t("{count} remaining", { count: remaining })}</Badge>
                   ) : null}
                 </>
               }
-              description="One-time codes for when you can’t use your authenticator."
+              description={t("One-time codes for when you can’t use your authenticator.")}
               aside={
                 <Button type="button" variant="secondary" size="sm" onClick={() => setRegenOpen(true)}>
-                  Regenerate
+                  {t("Regenerate")}
                 </Button>
               }
             />
@@ -856,19 +874,19 @@ export function SecurityPage() {
       </Card>
 
       <Card>
-        <CardHeader title="Recent security activity" description="Sign-ins and changes to your account." />
+        <CardHeader title={t("Recent security activity")} description={t("Sign-ins and changes to your account.")} />
         <div className="mt-4 border-t border-line">
-          <ActivityList events={events} empty="Sign-ins and security changes will appear here." />
+          <ActivityList events={events} empty={t("Sign-ins and security changes will appear here.")} />
         </div>
       </Card>
 
       <ConfirmDialog
         open={regenOpen}
         onOpenChange={setRegenOpen}
-        title="Regenerate recovery codes?"
-        description="Your current recovery codes will stop working. Save the new codes somewhere safe."
-        confirmLabel="Regenerate codes"
-        pendingLabel="Generating…"
+        title={t("Regenerate recovery codes?")}
+        description={t("Your current recovery codes will stop working. Save the new codes somewhere safe.")}
+        confirmLabel={t("Regenerate codes")}
+        pendingLabel={t("Generating…")}
         onConfirm={regenerate}
       />
     </div>
@@ -927,11 +945,11 @@ export function SessionsPage() {
   return (
     <div className="grid gap-6">
       <PageTitle
-        title="Sessions"
-        detail="Devices currently signed in to your Knotree account."
+        title={t("Sessions")}
+        detail={t("Devices currently signed in to your Knotree account.")}
         actions={
           <Button type="button" variant="secondary" disabled={!items || others === 0} onClick={() => setOthersOpen(true)}>
-            Sign out other sessions
+            {t("Sign out other sessions")}
           </Button>
         }
       />
@@ -950,8 +968,8 @@ export function SessionsPage() {
             ))}
           </div>
         ) : items.length === 0 ? (
-          <EmptyState icon={<DevicesIcon />} title="No active sessions">
-            Devices you sign in on will appear here.
+          <EmptyState icon={<DevicesIcon />} title={t("No active sessions")}>
+            {t("Devices you sign in on will appear here.")}
           </EmptyState>
         ) : (
           <ul className="divide-y divide-line">
@@ -969,17 +987,17 @@ export function SessionsPage() {
                     {item.device}
                     {item.current ? (
                       <Badge tone="success" dot>
-                        This device
+                        {t("This device")}
                       </Badge>
                     ) : null}
-                    {item.mfa ? <Badge tone="outline">2FA</Badge> : null}
+                    {item.mfa ? <Badge tone="outline">{t("2FA")}</Badge> : null}
                   </p>
                   <p className="mt-0.5 text-[13px] text-muted">
-                    <span className="font-mono text-[12.5px]">{item.ip ?? "IP unavailable"}</span>
+                    <span className="font-mono text-[12.5px]">{item.ip ?? t("IP unavailable")}</span>
                     <span className="mx-1.5 text-faint">·</span>
-                    <span title={formatWhen(item.last_active_at)}>Active {formatRelative(item.last_active_at)}</span>
+                    <span title={formatWhen(item.last_active_at)}>{t("Active")}{' '}{formatRelative(item.last_active_at)}</span>
                     <span className="mx-1.5 hidden text-faint sm:inline">·</span>
-                    <span className="hidden sm:inline">Signed in {formatDate(item.created_at)}</span>
+                    <span className="hidden sm:inline">{t("Signed in")}{' '}{formatDate(item.created_at)}</span>
                   </p>
                 </div>
                 <Button
@@ -990,7 +1008,7 @@ export function SessionsPage() {
                   pending={revoking === item.id}
                   onClick={() => void revoke(item.id)}
                 >
-                  {item.current ? "Sign out" : "Revoke"}
+                  {item.current ? t("Sign out") : t("Revoke")}
                 </Button>
               </li>
             ))}
@@ -1000,10 +1018,10 @@ export function SessionsPage() {
       <ConfirmDialog
         open={othersOpen}
         onOpenChange={setOthersOpen}
-        title="Sign out other sessions?"
-        description={`${others} other ${others === 1 ? "device" : "devices"} will be signed out. This device stays signed in.`}
-        confirmLabel="Sign out others"
-        pendingLabel="Signing out…"
+        title={t("Sign out other sessions?")}
+        description={t(others === 1 ? "{count} other device will be signed out. This device stays signed in." : "{count} other devices will be signed out. This device stays signed in.", { count: others })}
+        confirmLabel={t("Sign out others")}
+        pendingLabel={t("Signing out…")}
         onConfirm={revokeOthers}
       />
     </div>
@@ -1025,7 +1043,7 @@ export function ConnectedAccountsPage() {
   const [pending, setPending] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
   if (error) return <Alert>{error}</Alert>;
-  if (!profile) return <PageSkeleton label="Loading connected accounts…" />;
+  if (!profile) return <PageSkeleton label={t("Loading connected accounts…")} />;
 
   async function unlink(provider: string) {
     setPending(provider);
@@ -1049,8 +1067,8 @@ export function ConnectedAccountsPage() {
   return (
     <div className="grid gap-6">
       <PageTitle
-        title="Connected accounts"
-        detail="Google and GitHub can sign in to the same Knotree account. Matching emails are not linked automatically."
+        title={t("Connected accounts")}
+        detail={t("Google and GitHub can sign in to the same Knotree account. Matching emails are not linked automatically.")}
       />
       {formError ? <Alert>{formError}</Alert> : null}
       <Card>
@@ -1063,14 +1081,14 @@ export function ConnectedAccountsPage() {
                   <>
                     {providerLabel("password")}
                     <Badge tone="success" dot>
-                      Connected
+                      {t("Connected")}
                     </Badge>
                   </>
                 }
                 description={profile.identities.find((i) => i.provider === "password")?.email ?? profile.email}
                 aside={
                   <Link to="/account/security" className={buttonClass("ghost", "sm")}>
-                    Manage
+                    {t("Manage")}
                   </Link>
                 }
               />
@@ -1088,12 +1106,12 @@ export function ConnectedAccountsPage() {
                       {providerLabel(provider.id)}
                       {identity ? (
                         <Badge tone="success" dot>
-                          Connected
+                          {t("Connected")}
                         </Badge>
                       ) : null}
                     </>
                   }
-                  description={identity ? identity.email ?? "Connected" : `Sign in with your ${providerLabel(provider.id)} account.`}
+                  description={identity ? identity.email ?? t("Connected") : t("Sign in with your {provider} account.", { provider: providerLabel(provider.id) })}
                   aside={
                     identity ? (
                       <Button
@@ -1103,11 +1121,11 @@ export function ConnectedAccountsPage() {
                         pending={pending === provider.id}
                         onClick={() => setConfirm(provider.id)}
                       >
-                        Disconnect
+                        {t("Disconnect")}
                       </Button>
                     ) : (
                       <a className={buttonClass("secondary", "sm")} href={href}>
-                        Connect {providerLabel(provider.id)}
+                        {t("Connect")}{' '}{providerLabel(provider.id)}
                       </a>
                     )
                   }
@@ -1120,10 +1138,10 @@ export function ConnectedAccountsPage() {
               <Row
                 icon={<LinkIcon />}
                 title={providerLabel(identity.provider)}
-                description={identity.email ?? "Connected"}
+                description={identity.email ?? t("Connected")}
                 aside={
                   <Button type="button" variant="secondary" size="sm" onClick={() => setConfirm(identity.provider)}>
-                    Disconnect
+                    {t("Disconnect")}
                   </Button>
                 }
               />
@@ -1132,17 +1150,17 @@ export function ConnectedAccountsPage() {
         </ul>
       </Card>
       <p className="text-[13px] text-muted">
-        Keep at least one way to sign in. Disconnecting does not delete the account on the other service.
+        {t("Keep at least one way to sign in. Disconnecting does not delete the account on the other service.")}
       </p>
       <ConfirmDialog
         open={confirm !== null}
         onOpenChange={(open) => {
           if (!open) setConfirm(null);
         }}
-        title={`Disconnect ${providerLabel(confirm ?? "")}?`}
-        description="You will no longer be able to sign in to Knotree with this account. You can connect it again later."
-        confirmLabel="Disconnect"
-        pendingLabel="Disconnecting…"
+        title={t("Disconnect {provider}?", { provider: providerLabel(confirm ?? "") })}
+        description={t("You will no longer be able to sign in to Knotree with this account. You can connect it again later.")}
+        confirmLabel={t("Disconnect")}
+        pendingLabel={t("Disconnecting…")}
         danger
         onConfirm={() => unlink(confirm ?? "")}
       />

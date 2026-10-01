@@ -1,3 +1,4 @@
+import { getLocale, locales, setLocale, t, useLocale, type Locale } from "../lib/i18n";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 import { ApiError, api, signInLocation } from "../lib/api";
@@ -28,6 +29,7 @@ export function AuthShell({ children, footer }: { children: ReactNode; footer?: 
     <div className="flex min-h-dvh flex-col">
       <header className="flex items-center justify-between px-5 py-5 sm:px-8">
         <Logo />
+        <LanguageSwitcher />
       </header>
       <main className="flex flex-1 items-start justify-center px-4 pb-12 pt-4 sm:items-center sm:pt-0">
         <div className="w-full max-w-[400px] animate-fade-up">
@@ -38,7 +40,7 @@ export function AuthShell({ children, footer }: { children: ReactNode; footer?: 
         </div>
       </main>
       <footer className="px-5 pb-6 text-center text-[12.5px] text-faint sm:px-8">
-        © {new Date().getFullYear()} Knotree · One account for every Knotree service
+        © {new Date().getFullYear()} Knotree · {t("One account for every Knotree service")}
       </footer>
     </div>
   );
@@ -70,6 +72,42 @@ export function TextLink({ to, children, className = "" }: { to: string; childre
 }
 
 /* ------------------------------------------------------------------ */
+/* Language                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Switches the interface language. When signed in, the choice is also saved
+ * to the account so email and notifications use the same language.
+ */
+export function LanguageSwitcher({ signedIn = false, className = "" }: { signedIn?: boolean; className?: string }) {
+  const locale = useLocale();
+  return (
+    <select
+      aria-label={t("Language")}
+      value={locale}
+      className={`h-8 rounded-[7px] border border-line bg-surface px-2 text-[13px] text-ink-soft transition-colors hover:text-ink ${className}`}
+      onChange={(event) => {
+        const next = event.target.value as Locale;
+        if (!signedIn) {
+          setLocale(next);
+          return;
+        }
+        // Save first so the profile reload after the switch sees the new value.
+        void api("/api/v1/me/profile", { method: "PATCH", body: JSON.stringify({ locale: next }) })
+          .catch(() => undefined)
+          .finally(() => setLocale(next));
+      }}
+    >
+      {locales.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Signed-in profile context                                           */
 /* ------------------------------------------------------------------ */
 
@@ -85,12 +123,15 @@ function useLoadProfile(): ProfileState {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState("");
   const reload = useCallback(async () => {
-    setProfile(await api<Profile>("/api/v1/me"));
+    const loaded = await api<Profile>("/api/v1/me");
+    // The account's saved language wins over the browser's.
+    if (loaded.locale && loaded.locale !== getLocale()) setLocale(loaded.locale);
+    setProfile(loaded);
   }, []);
   useEffect(() => {
     void reload().catch((err: unknown) => {
       if (err instanceof ApiError && err.status === 401) window.location.assign(signInLocation());
-      else setError(err instanceof ApiError ? err.message : "Could not load your account.");
+      else setError(err instanceof ApiError ? err.message : t("Could not load your account."));
     });
   }, [reload]);
   return { profile, error, reload };
@@ -126,7 +167,7 @@ function SideLink({ item }: { item: NavItem }) {
           <span className={isActive ? "text-pine" : "text-faint transition-colors group-hover:text-ink-soft"}>
             {item.icon}
           </span>
-          {item.label}
+          {t(item.label)}
         </>
       )}
     </NavLink>
@@ -146,7 +187,7 @@ function TabLink({ item }: { item: NavItem }) {
         }`
       }
     >
-      {item.label}
+      {t(item.label)}
     </NavLink>
   );
 }
@@ -156,8 +197,8 @@ function SignOutButton({ compact }: { compact?: boolean }) {
   return (
     <button
       type="button"
-      aria-label="Sign out"
-      title="Sign out"
+      aria-label={t("Sign out")}
+      title={t("Sign out")}
       disabled={pending}
       className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-[7px] text-muted transition-colors hover:bg-sunken hover:text-ink disabled:opacity-60 ${
         compact ? "h-9 w-9" : "h-8 w-8"
@@ -186,7 +227,7 @@ function UserChip({ profile }: { profile: Profile | null }) {
       </div>
     );
   }
-  const name = profile.display_name || profile.email.split("@")[0] || "Account";
+  const name = profile.display_name || profile.email.split("@")[0] || t("Account");
   return (
     <div className="flex items-center gap-2.5">
       <Avatar name={profile.display_name || profile.email} />
@@ -240,6 +281,7 @@ function AppFrame({
             </div>
           ) : null}
           <div className="mt-auto border-t border-line px-4 py-4">
+            <LanguageSwitcher signedIn className="mb-3 w-full" />
             <UserChip profile={state.profile} />
           </div>
         </aside>
@@ -249,6 +291,7 @@ function AppFrame({
           <div className="flex h-14 items-center justify-between px-4">
             <Logo suffix={badge} />
             <div className="flex items-center gap-1">
+              <LanguageSwitcher signedIn className="mr-1" />
               {state.profile ? <Avatar name={state.profile.display_name || state.profile.email} size={28} /> : null}
               <SignOutButton compact />
             </div>
@@ -290,15 +333,15 @@ export function AccountShell() {
   const secondary = state.profile?.is_admin
     ? [{ to: "/admin", label: "Administration", icon: <AppIcon /> }]
     : undefined;
-  return <AppFrame label="Account" nav={accountNav} secondary={secondary} state={state} />;
+  return <AppFrame label={t("Account")} nav={accountNav} secondary={secondary} state={state} />;
 }
 
 export function AdminShell() {
   const state = useLoadProfile();
   return (
     <AppFrame
-      label="Administration"
-      badge="Admin"
+      label={t("Administration")}
+      badge={t("Admin")}
       nav={adminNav}
       secondary={[{ to: "/account", label: "Back to account", icon: <ArrowLeftIcon />, end: true }]}
       state={state}

@@ -1,3 +1,5 @@
+import { getLocale, t } from "./i18n";
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -26,7 +28,7 @@ async function ensureCsrf(): Promise<string> {
   const response = await fetch("/api/v1/auth/csrf", { credentials: "include" });
   const body = (await response.json()) as { csrf_token?: string };
   if (!response.ok || !body.csrf_token) {
-    throw new ApiError(response.status, "CSRF", "Refresh the page and try again.");
+    throw new ApiError(response.status, "CSRF", t("Refresh the page and try again."));
   }
   csrfToken = body.csrf_token;
   return csrfToken;
@@ -35,6 +37,7 @@ async function ensureCsrf(): Promise<string> {
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const headers = new Headers(init.headers);
+  if (!headers.has("accept-language")) headers.set("accept-language", getLocale());
   if (init.body && !headers.has("content-type")) {
     headers.set("content-type", "application/json");
   }
@@ -50,7 +53,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(
       response.status,
       error?.code ?? "REQUEST_FAILED",
-      error?.message ?? "Something went wrong. Try again.",
+      error?.message ?? t("Something went wrong. Try again."),
       error?.request_id,
     );
   }
