@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
-import { AuthShell } from "../components/shells";
-import { Alert, Button } from "../components/ui";
+import { AuthHeading, AuthShell, TextLink } from "../components/shells";
+import { ChevronRightIcon, KeyIcon, MailIcon, SmartphoneCodeIcon } from "../components/icons";
+import { Alert, Button, CodeField, useCountdown } from "../components/ui";
 import { ApiError, api, continueAfterAuth } from "../lib/api";
 
 type Challenge = {
@@ -21,23 +22,38 @@ function loadChallenge(): Challenge | null {
   }
 }
 
+function Alternative({ to, icon, children }: { to: string; icon: ReactNode; children: ReactNode }) {
+  return (
+    <Link
+      to={to}
+      className="group flex items-center gap-3 rounded-[8px] border border-line bg-white px-3 py-2.5 text-sm text-ink-soft transition-colors hover:border-line-strong hover:text-ink"
+    >
+      <span className="text-faint group-hover:text-ink-soft">{icon}</span>
+      <span className="flex-1">{children}</span>
+      <ChevronRightIcon className="text-faint transition-transform group-hover:translate-x-0.5" />
+    </Link>
+  );
+}
+
 export function MfaPage({ method }: { method: "totp" | "email" | "recovery" }) {
   const navigate = useNavigate();
   const challenge = loadChallenge();
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [pending, setPending] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
+  const [sending, setSending] = useState(false);
+  const [cooldown, setCooldown] = useCountdown();
 
   useEffect(() => {
     if (!challenge) navigate("/sign-in", { replace: true });
   }, [challenge, navigate]);
 
   useEffect(() => {
-    if (cooldown <= 0) return;
-    const timer = window.setTimeout(() => setCooldown((value) => value - 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [cooldown]);
+    setCode("");
+    setError("");
+    setNotice("");
+  }, [method]);
 
   if (!challenge) return null;
 
@@ -60,61 +76,99 @@ export function MfaPage({ method }: { method: "totp" | "email" | "recovery" }) {
   }
 
   async function resend() {
-    setPending(true);
+    setSending(true);
     setError("");
     try {
       await api("/api/v1/auth/mfa/email/send", {
         method: "POST",
         body: JSON.stringify({ mfa_token: challenge!.mfa_token }),
       });
+      setNotice("A new code is on its way.");
       setCooldown(30);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not send a new code.");
     } finally {
-      setPending(false);
+      setSending(false);
     }
   }
 
   const title = method === "recovery" ? "Use a recovery code" : "Verify it's you";
+  const icon =
+    method === "totp" ? <SmartphoneCodeIcon size={20} /> : method === "email" ? <MailIcon size={20} /> : <KeyIcon size={20} />;
   const detail =
-    method === "totp"
-      ? "Enter the 6-digit code from your authenticator app."
-      : method === "email"
-        ? `We sent a verification code to ${challenge.masked_email ?? "your email"}. It expires in a few minutes. Do not share it.`
-        : "Enter one unused recovery code.";
+    method === "totp" ? (
+      "Enter the 6-digit code from your authenticator app."
+    ) : method === "email" ? (
+      <>
+        We sent a verification code to <span className="font-medium text-ink">{challenge.masked_email ?? "your email"}</span>.
+        It expires in a few minutes. Do not share it.
+      </>
+    ) : (
+      "Enter one unused recovery code. Each code works once."
+    );
+
+  const alternatives = [
+    challenge.methods.includes("totp") && method !== "totp" ? (
+      <Alternative key="totp" to="/mfa/totp" icon={<SmartphoneCodeIcon />}>
+        Use authenticator instead
+      </Alternative>
+    ) : null,
+    challenge.methods.includes("email") && method !== "email" ? (
+      <Alternative key="email" to="/mfa/email" icon={<MailIcon />}>
+        Use email code instead
+      </Alternative>
+    ) : null,
+    method !== "recovery" ? (
+      <Alternative key="recovery" to="/mfa/recovery" icon={<KeyIcon />}>
+        Use a recovery code
+      </Alternative>
+    ) : null,
+  ].filter(Boolean);
 
   return (
-    <AuthShell>
-      <h1 className="text-[22px] font-medium tracking-tight">{title}</h1>
-      <p className="mt-1 mb-6 text-sm text-muted">{detail}</p>
+    <AuthShell
+      footer={
+        <>
+          Not you? <TextLink to="/sign-in">Sign in with another account</TextLink>
+        </>
+      }
+    >
+      <AuthHeading icon={icon} title={title}>
+        {detail}
+      </AuthHeading>
       <form className="grid gap-4" onSubmit={submit}>
         {error ? <Alert>{error}</Alert> : null}
-        <label className="grid gap-1.5 text-sm">
-          {method === "recovery" ? "Recovery code" : "Verification code"}
-          <input
-            className="h-10 rounded-[6px] border border-line bg-surface px-3 tracking-[0.2em]"
-            inputMode={method === "recovery" ? "text" : "numeric"}
-            autoComplete="one-time-code"
-            autoFocus
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-            required
-          />
-        </label>
-        <Button type="submit" pending={pending} className="w-full">
+        {notice && !error ? <Alert tone="success">{notice}</Alert> : null}
+        <CodeField
+          label={method === "recovery" ? "Recovery code" : "Verification code"}
+          recovery={method === "recovery"}
+          autoFocus
+          value={code}
+          onChange={setCode}
+        />
+        <Button type="submit" size="lg" pending={pending} className="w-full">
           {pending ? "Verifying…" : "Verify"}
         </Button>
-      </form>
-      <div className="mt-5 grid gap-2 text-sm">
         {method === "email" ? (
-          <button type="button" className="text-left underline" disabled={cooldown > 0 || pending} onClick={() => void resend()}>
-            {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
-          </button>
+          <p className="text-center text-[13px] text-muted">
+            Didn’t get it?{" "}
+            <button
+              type="button"
+              className="font-medium text-pine underline decoration-pine/25 underline-offset-[3px] hover:decoration-pine disabled:cursor-not-allowed disabled:text-muted disabled:no-underline"
+              disabled={cooldown > 0 || sending}
+              onClick={() => void resend()}
+            >
+              {cooldown > 0 ? `Resend in ${cooldown}s` : sending ? "Sending…" : "Resend code"}
+            </button>
+          </p>
         ) : null}
-        {challenge.methods.includes("totp") && method !== "totp" ? <Link to="/mfa/totp">Use authenticator instead</Link> : null}
-        {challenge.methods.includes("email") && method !== "email" ? <Link to="/mfa/email">Use email code instead</Link> : null}
-        {method !== "recovery" ? <Link to="/mfa/recovery">Use a recovery code</Link> : null}
-      </div>
+      </form>
+      {alternatives.length ? (
+        <div className="mt-6 border-t border-line pt-5">
+          <p className="mb-2.5 text-[12px] font-medium uppercase tracking-[0.08em] text-faint">Other options</p>
+          <div className="grid gap-2">{alternatives}</div>
+        </div>
+      ) : null}
     </AuthShell>
   );
 }
