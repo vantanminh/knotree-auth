@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 static STATS_CACHE: OnceLock<Mutex<Option<(Instant, Value)>>> = OnceLock::new();
+static ANALYTICS_CACHE: OnceLock<Mutex<Vec<(i64, Instant, Value)>>> = OnceLock::new();
 
 pub async fn stats(state: &AppState) -> AppResult<Value> {
     let cache = STATS_CACHE.get_or_init(|| Mutex::new(None));
@@ -94,6 +95,183 @@ pub async fn stats(state: &AppState) -> AppResult<Value> {
         "daily_signups": growth.into_iter().map(|(day, count)| json!({"day": day, "count": count})).collect::<Vec<_>>(),
     });
     *cache.lock().await = Some((Instant::now(), value.clone()));
+    Ok(value)
+}
+
+/// Range accepted by the analytics endpoint; anything else falls back to 30 days.
+pub fn analytics_days(requested: Option<i64>) -> i64 {
+    requested
+        .filter(|days| matches!(days, 7 | 30 | 90))
+        .unwrap_or(30)
+}
+
+pub async fn analytics(state: &AppState, days: i64) -> AppResult<Value> {
+    let cache = ANALYTICS_CACHE.get_or_init(|| Mutex::new(Vec::new()));
+    if let Some((_, _, value)) = cache
+        .lock()
+        .await
+        .iter()
+        .find(|(d, at, _)| *d == days && at.elapsed() < StdDuration::from_secs(60))
+    {
+        return Ok(value.clone());
+    }
+
+    // One row per UTC day in the range, zero-filled.
+    let series: Vec<(DateTime<Utc>, i64, i64, i64, i64)> = sqlx::query_as(
+        r#"
+        WITH days AS (
+            SELECT generate_series(
+                date_trunc('day', now() AT TIME ZONE 'UTC') - make_interval(days => $1 - 1),
+                date_trunc('day', now() AT TIME ZONE 'UTC'),
+                interval '1 day'
+            ) AT TIME ZONE 'UTC' AS day
+        ),
+        signups AS (
+            SELECT date_trunc('day', created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS day, COUNT(*) AS n
+            FROM users
+            WHERE created_at >= (SELECT MIN(day) FROM days) AND status <> 'pending_deletion'
+            GROUP BY 1
+        ),
+        logins AS (
+            SELECT date_trunc('day', occurred_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS day,
+                COUNT(*) FILTER (WHERE event_type = 'LOGIN_SUCCESS') AS ok,
+                COUNT(*) FILTER (WHERE event_type = 'LOGIN_FAILED') AS failed,
+                COUNT(DISTINCT target_user_id) FILTER (WHERE event_type = 'LOGIN_SUCCESS') AS active
+            FROM security_events
+            WHERE event_type IN ('LOGIN_SUCCESS', 'LOGIN_FAILED')
+              AND occurred_at >= (SELECT MIN(day) FROM days)
+            GROUP BY 1
+        )
+        SELECT d.day,
+            COALESCE(s.n, 0),
+            COALESCE(l.ok, 0),
+            COALESCE(l.failed, 0),
+            COALESCE(l.active, 0)
+        FROM days d
+        LEFT JOIN signups s ON s.day = d.day
+        LEFT JOIN logins l ON l.day = d.day
+        ORDER BY d.day
+        "#,
+    )
+    .bind(days as i32)
+    .fetch_all(&state.db)
+    .await?;
+
+    let active: (i64, i64, i64) = sqlx::query_as(
+        r#"
+        SELECT
+            COUNT(DISTINCT target_user_id) FILTER (WHERE occurred_at >= now() - interval '1 day'),
+            COUNT(DISTINCT target_user_id) FILTER (WHERE occurred_at >= now() - interval '7 days'),
+            COUNT(DISTINCT target_user_id)
+        FROM security_events
+        WHERE event_type = 'LOGIN_SUCCESS' AND occurred_at >= now() - interval '30 days'
+        "#,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    let login_methods: Vec<(String, i64)> = sqlx::query_as(
+        r#"
+        SELECT method, COUNT(*)
+        FROM security_events,
+            jsonb_array_elements_text(
+                CASE WHEN jsonb_typeof(metadata->'methods') = 'array' THEN metadata->'methods' ELSE '[]'::jsonb END
+            ) AS method
+        WHERE event_type = 'LOGIN_SUCCESS' AND occurred_at >= (date_trunc('day', now() AT TIME ZONE 'UTC') - make_interval(days => $1 - 1)) AT TIME ZONE 'UTC'
+        GROUP BY method
+        ORDER BY 2 DESC, 1
+        "#,
+    )
+    .bind(days as i32)
+    .fetch_all(&state.db)
+    .await?;
+
+    let providers: Vec<(String, i64)> = sqlx::query_as(
+        r#"
+        SELECT i.provider, COUNT(DISTINCT i.user_id)
+        FROM identities i
+        JOIN users u ON u.id = i.user_id AND u.status <> 'pending_deletion'
+        GROUP BY 1
+        ORDER BY 2 DESC, 1
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let event_types: Vec<(String, i64)> = sqlx::query_as(
+        r#"
+        SELECT event_type, COUNT(*)
+        FROM security_events
+        WHERE occurred_at >= (date_trunc('day', now() AT TIME ZONE 'UTC') - make_interval(days => $1 - 1)) AT TIME ZONE 'UTC'
+        GROUP BY 1
+        ORDER BY 2 DESC, 1
+        LIMIT 10
+        "#,
+    )
+    .bind(days as i32)
+    .fetch_all(&state.db)
+    .await?;
+
+    let clients: Vec<(String, i64)> = sqlx::query_as(
+        r#"
+        SELECT client_id, COUNT(*)
+        FROM security_events
+        WHERE event_type = 'OAUTH_AUTHORIZED' AND client_id IS NOT NULL
+          AND occurred_at >= (date_trunc('day', now() AT TIME ZONE 'UTC') - make_interval(days => $1 - 1)) AT TIME ZONE 'UTC'
+        GROUP BY 1
+        ORDER BY 2 DESC, 1
+        LIMIT 10
+        "#,
+    )
+    .bind(days as i32)
+    .fetch_all(&state.db)
+    .await?;
+
+    let (total_users, mfa_users): (i64, i64) = sqlx::query_as(
+        r#"
+        SELECT
+            (SELECT COUNT(*) FROM users WHERE status <> 'pending_deletion'),
+            (SELECT COUNT(DISTINCT m.user_id) FROM mfa_methods m
+                JOIN users u ON u.id = m.user_id AND u.status <> 'pending_deletion'
+                WHERE m.enabled_at IS NOT NULL AND m.disabled_at IS NULL)
+        "#,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    let (signups, ok, failed) = series.iter().fold((0, 0, 0), |acc, row| {
+        (acc.0 + row.1, acc.1 + row.2, acc.2 + row.3)
+    });
+    let pairs = |rows: Vec<(String, i64)>| {
+        rows.into_iter()
+            .map(|(key, count)| json!({"key": key, "count": count}))
+            .collect::<Vec<_>>()
+    };
+    let value = json!({
+        "days": days,
+        "totals": {
+            "signups": signups,
+            "logins_success": ok,
+            "logins_failed": failed,
+            "users": total_users,
+            "mfa_users": mfa_users,
+        },
+        "active_users": { "daily": active.0, "weekly": active.1, "monthly": active.2 },
+        "series": series.into_iter().map(|(day, signups, ok, failed, active)| json!({
+            "day": day,
+            "signups": signups,
+            "logins_success": ok,
+            "logins_failed": failed,
+            "active_users": active,
+        })).collect::<Vec<_>>(),
+        "login_methods": pairs(login_methods),
+        "identity_providers": pairs(providers),
+        "event_types": pairs(event_types),
+        "oauth_clients": pairs(clients),
+    });
+    let mut entries = cache.lock().await;
+    entries.retain(|(d, _, _)| *d != days);
+    entries.push((days, Instant::now(), value.clone()));
     Ok(value)
 }
 

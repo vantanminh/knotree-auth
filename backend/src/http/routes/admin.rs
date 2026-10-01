@@ -17,6 +17,21 @@ pub async fn stats(
 }
 
 #[derive(Deserialize)]
+pub struct AnalyticsQuery {
+    days: Option<i64>,
+}
+
+pub async fn analytics(
+    State(state): State<AppState>,
+    _admin: AdminSession,
+    Query(query): Query<AnalyticsQuery>,
+) -> Result<Json<Value>, AppError> {
+    Ok(Json(
+        admin::analytics(&state, admin::analytics_days(query.days)).await?,
+    ))
+}
+
+#[derive(Deserialize)]
 pub struct UserListQuery {
     q: Option<String>,
     status: Option<String>,
