@@ -319,6 +319,7 @@ const accountNav: NavItem[] = [
   { to: "/account/security", label: "Security", icon: <ShieldIcon /> },
   { to: "/account/sessions", label: "Sessions", icon: <DevicesIcon /> },
   { to: "/account/connected-accounts", label: "Connected accounts", icon: <LinkIcon /> },
+  { to: "/account/authorized-apps", label: "Authorized apps", icon: <AppIcon /> },
 ];
 
 const adminNav: NavItem[] = [
