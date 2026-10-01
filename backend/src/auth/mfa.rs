@@ -154,7 +154,8 @@ pub async fn confirm_totp(
         state,
         &email,
         templates::security_alert(
-            "An authenticator app is now enabled on your Knotree account.",
+            crate::i18n::user_locale(&state.db, user_id).await,
+            templates::SecurityAlert::AuthenticatorEnabled,
             &format!("{}/account/security", state.config.app_base_url),
         ),
     )
@@ -315,14 +316,15 @@ pub async fn set_email_mfa(
     apply_meta(&mut event, meta);
     super::record(&state.db, event).await?;
     let summary = if enabled {
-        "Email verification codes are now enabled on your Knotree account."
+        templates::SecurityAlert::EmailCodesEnabled
     } else {
-        "Email verification codes were turned off on your Knotree account."
+        templates::SecurityAlert::EmailCodesDisabled
     };
     let _ = email::enqueue_and_send(
         state,
         &email,
         templates::security_alert(
+            crate::i18n::user_locale(&state.db, user_id).await,
             summary,
             &format!("{}/account/security", state.config.app_base_url),
         ),
@@ -385,7 +387,8 @@ pub async fn disable_totp(
             state,
             &email,
             templates::security_alert(
-                "The authenticator app was turned off on your Knotree account.",
+                crate::i18n::user_locale(&state.db, user_id).await,
+                templates::SecurityAlert::AuthenticatorDisabled,
                 &format!("{}/account/security", state.config.app_base_url),
             ),
         )
@@ -419,7 +422,8 @@ pub async fn regenerate_recovery(
             state,
             &email,
             templates::security_alert(
-                "Recovery codes for your Knotree account were regenerated. Previous codes no longer work.",
+                crate::i18n::user_locale(&state.db, user_id).await,
+                templates::SecurityAlert::RecoveryCodesRegenerated,
                 &format!("{}/account/security", state.config.app_base_url),
             ),
         )

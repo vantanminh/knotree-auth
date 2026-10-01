@@ -345,7 +345,12 @@ pub async fn force_password_reset(
     .execute(&state.db)
     .await?;
     let link = format!("{}/reset-password?token={token}", state.config.app_base_url);
-    email::enqueue_and_send(state, &email, templates::password_reset(&link)).await?;
+    email::enqueue_and_send(
+        state,
+        &email,
+        templates::password_reset(crate::i18n::user_locale(&state.db, user_id).await, &link),
+    )
+    .await?;
     let mut event = auth::NewEvent::success("ADMIN_ACTION", actor);
     event.target_user_id = Some(user_id);
     event.metadata = json!({"action": "force_password_reset"});

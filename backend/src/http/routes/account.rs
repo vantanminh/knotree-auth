@@ -19,7 +19,8 @@ pub async fn me(State(state): State<AppState>, auth: AuthSession) -> Result<Json
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileBody {
-    display_name: String,
+    display_name: Option<String>,
+    locale: Option<String>,
 }
 
 pub async fn update_profile(
@@ -29,7 +30,14 @@ pub async fn update_profile(
     Csrf: Csrf,
     Json(body): Json<ProfileBody>,
 ) -> Result<Json<Value>, AppError> {
-    auth::update_profile(&state, auth.session.user_id, &body.display_name, &meta).await?;
+    auth::update_profile(
+        &state,
+        auth.session.user_id,
+        body.display_name.as_deref(),
+        body.locale.as_deref(),
+        &meta,
+    )
+    .await?;
     Ok(Json(json!({"status": "updated"})))
 }
 

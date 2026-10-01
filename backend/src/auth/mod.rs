@@ -30,6 +30,7 @@ pub struct ClientMeta {
     pub request_id: String,
     pub ip: Option<IpNetwork>,
     pub user_agent: Option<String>,
+    pub locale: crate::i18n::Locale,
 }
 
 pub fn apply_meta(event: &mut NewEvent, meta: &ClientMeta) {

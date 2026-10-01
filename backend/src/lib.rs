@@ -6,6 +6,7 @@ pub mod config;
 mod email;
 mod error;
 mod http;
+mod i18n;
 mod oauth;
 mod observability;
 mod security;

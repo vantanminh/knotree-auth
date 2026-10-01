@@ -132,7 +132,11 @@ impl IntoResponse for AppError {
         let body = Json(ErrorBody {
             error: ErrorDetail {
                 code: self.code(),
-                message: self.public_message(),
+                message: crate::i18n::translate(
+                    &self.public_message(),
+                    crate::i18n::Locale::current(),
+                )
+                .to_string(),
                 request_id,
             },
         });

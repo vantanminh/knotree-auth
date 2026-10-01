@@ -215,7 +215,11 @@ pub async fn send_email_otp(state: &AppState, user_id: Uuid, email: &str) -> App
     email::enqueue_and_send(
         state,
         email,
-        templates::mfa_code(&code, state.config.email_otp_seconds / 60),
+        templates::mfa_code(
+            crate::i18n::user_locale(&state.db, user_id).await,
+            &code,
+            state.config.email_otp_seconds / 60,
+        ),
     )
     .await?;
     metrics::counter!("auth_mfa_challenge_total", "method" => "email").increment(1);
