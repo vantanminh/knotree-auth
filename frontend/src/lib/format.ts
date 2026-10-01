@@ -26,6 +26,7 @@ export const eventLabels: Record<string, string> = {
   SESSION_REVOKED: "Session revoked",
   ADMIN_ACTION: "Admin action",
   OAUTH_AUTHORIZED: "Application authorized",
+  OAUTH_CONSENT_REVOKED: "Application access revoked",
   RECOVERY_CODES_REGENERATED: "Recovery codes regenerated",
   ACCOUNT_DELETED: "Account deletion requested",
   IDENTITY_LINKED: "Account connected",

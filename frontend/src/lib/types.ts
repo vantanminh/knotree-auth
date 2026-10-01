@@ -30,6 +30,17 @@ export type SessionItem = {
   current: boolean;
 };
 
+export type AuthorizationItem = {
+  client_id: string;
+  name: string;
+  first_party: boolean;
+  status: "active" | "disabled";
+  scopes: string[];
+  granted_at: string;
+  last_used_at: string | null;
+  active_grants: number;
+};
+
 export type SecurityEvent = {
   id: string;
   occurred_at: string;

@@ -129,6 +129,26 @@ pub async fn revoke_others(
     Ok(Json(json!({"status": "revoked"})))
 }
 
+pub async fn authorizations(
+    State(state): State<AppState>,
+    auth: AuthSession,
+) -> Result<Json<Value>, AppError> {
+    Ok(Json(json!({
+        "items": auth::list_authorizations(&state, auth.session.user_id).await?
+    })))
+}
+
+pub async fn revoke_authorization(
+    State(state): State<AppState>,
+    auth: AuthSession,
+    Meta(meta): Meta,
+    Csrf: Csrf,
+    Path(client_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    auth::revoke_authorization(&state, auth.session.user_id, &client_id, &meta).await?;
+    Ok(Json(json!({"status": "revoked"})))
+}
+
 pub async fn delete_account(
     State(state): State<AppState>,
     auth: AuthSession,

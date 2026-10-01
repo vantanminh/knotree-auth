@@ -355,6 +355,65 @@ async fn identity_platform_flows() {
     let userinfo: Value = userinfo.json().await.unwrap();
     assert_eq!(userinfo["email"], email);
 
+    let authorized = api.get("/api/v1/me/authorizations").await;
+    assert_eq!(authorized.status, StatusCode::OK, "{}", authorized.text);
+    let items = authorized.json["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["client_id"], "knotree-study");
+    assert_eq!(items[0]["name"], "Knotree Study");
+    assert_eq!(items[0]["first_party"], true);
+    assert!(items[0]["scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|scope| scope == "offline_access"));
+    assert!(items[0]["last_used_at"].is_string());
+    assert_eq!(items[0]["active_grants"], 1);
+
+    let revoked = api
+        .send(api.http.delete(format!(
+            "{}/api/v1/me/authorizations/knotree-study",
+            api.base
+        )))
+        .await;
+    assert_eq!(revoked.status, StatusCode::OK, "{}", revoked.text);
+    let after_revoke = api
+        .http
+        .get(format!("{}/oauth/userinfo", api.base))
+        .bearer_auth(&access)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(after_revoke.status(), StatusCode::UNAUTHORIZED);
+    let refreshed_after_revoke = api
+        .form(
+            "/oauth/token",
+            [
+                ("grant_type", "refresh_token"),
+                ("refresh_token", refresh.as_str()),
+                ("client_id", "knotree-study"),
+                ("scope", "openid"),
+                ("redirect_uri", ""),
+            ],
+        )
+        .await;
+    assert_eq!(refreshed_after_revoke.status, StatusCode::BAD_REQUEST);
+    let emptied = api.get("/api/v1/me/authorizations").await;
+    assert!(emptied.json["items"].as_array().unwrap().is_empty());
+    let revoked_again = api
+        .send(api.http.delete(format!(
+            "{}/api/v1/me/authorizations/knotree-study",
+            api.base
+        )))
+        .await;
+    assert_eq!(revoked_again.status, StatusCode::NOT_FOUND);
+    let events = api.get("/api/v1/me/security-events").await;
+    assert!(events.json["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["event_type"] == "OAUTH_CONSENT_REVOKED"));
+
     let reused_code = api
         .form(
             "/oauth/token",
@@ -491,8 +550,6 @@ async fn identity_platform_flows() {
         .any(
             |item| item["event_type"] == "USER_REGISTERED" || item["event_type"] == "LOGIN_SUCCESS"
         ));
-
-    let _ = refresh;
 }
 
 #[tokio::test]

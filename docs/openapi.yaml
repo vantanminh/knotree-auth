@@ -59,6 +59,27 @@ paths:
       responses:
         "200": { description: Profile without secrets }
         "401": { description: No session }
+  /api/v1/me/authorizations:
+    get:
+      summary: Services (OAuth clients) the current user has authorized
+      responses:
+        "200":
+          description: >-
+            `items` with client_id, name, first_party, status, scopes, granted_at,
+            last_used_at, and active_grants, newest grant first
+        "401": { description: No session }
+  /api/v1/me/authorizations/{client_id}:
+    delete:
+      summary: Revoke a service's access and every token it holds for the user
+      parameters:
+        - in: path
+          name: client_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Consent removed and tokens revoked }
+        "401": { description: No session }
+        "404": { description: The user has not authorized that service }
   /api/v1/admin/stats:
     get:
       summary: Super-admin overview
