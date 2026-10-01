@@ -147,7 +147,12 @@ async fn notify_if_new_device(
     Ok(())
 }
 
-pub async fn load(state: &AppState, token: &str) -> AppResult<Option<CurrentSession>> {
+pub struct LoadedSession {
+    pub session: CurrentSession,
+    pub refresh_cookie: bool,
+}
+
+pub async fn load(state: &AppState, token: &str) -> AppResult<Option<LoadedSession>> {
     if token.len() < 20 || token.len() > 128 {
         return Ok(None);
     }
@@ -191,25 +196,42 @@ pub async fn load(state: &AppState, token: &str) -> AppResult<Option<CurrentSess
         let _ = revoke_id(&state.db, row.0, "idle").await;
         return Ok(None);
     }
-    if row.3 + Duration::minutes(5) < now {
-        sqlx::query("UPDATE sessions SET last_active_at = $2 WHERE id = $1")
-            .bind(row.0)
-            .bind(now)
-            .execute(&state.db)
-            .await?;
+    let mut expires_at = row.6;
+    let mut refresh_cookie = false;
+    let stale = row.3 + Duration::minutes(5) < now;
+    let expiring_soon = !is_admin && expires_at <= now + Duration::hours(24);
+    if stale || expiring_soon {
+        if !is_admin {
+            let extended = now + Duration::hours(state.config.session_ttl_hours);
+            if extended > expires_at {
+                expires_at = extended;
+                refresh_cookie = true;
+            }
+        }
+        sqlx::query(
+            "UPDATE sessions SET last_active_at = $2, expires_at = $3 WHERE id = $1 AND revoked_at IS NULL",
+        )
+        .bind(row.0)
+        .bind(now)
+        .bind(expires_at)
+        .execute(&state.db)
+        .await?;
     }
-    Ok(Some(CurrentSession {
-        id: row.0,
-        user_id: row.1,
-        created_at: row.2,
-        last_active_at: now,
-        authenticated_at: row.4,
-        elevated_at: row.5,
-        expires_at: row.6,
-        device_label: row.7,
-        auth_methods: row.8,
-        mfa_satisfied: row.9,
-        is_admin,
+    Ok(Some(LoadedSession {
+        refresh_cookie,
+        session: CurrentSession {
+            id: row.0,
+            user_id: row.1,
+            created_at: row.2,
+            last_active_at: now,
+            authenticated_at: row.4,
+            elevated_at: row.5,
+            expires_at,
+            device_label: row.7,
+            auth_methods: row.8,
+            mfa_satisfied: row.9,
+            is_admin,
+        },
     }))
 }
 

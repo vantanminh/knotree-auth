@@ -22,10 +22,13 @@ async function proxy(request: Request, url: URL, env: Env): Promise<Response> {
   const headers = new Headers(request.headers);
   headers.set("x-forwarded-host", url.host);
   headers.set("x-forwarded-proto", url.protocol.replace(":", ""));
+  const cookie = request.headers.get("cookie");
+  if (cookie) headers.set("cookie", cookie);
   const init: RequestInit = {
     method: request.method,
     headers,
     redirect: "manual",
+    cache: "no-store",
   };
   if (request.method !== "GET" && request.method !== "HEAD") {
     init.body = request.body;
@@ -51,6 +54,8 @@ function decorate(upstream: Response, html: boolean): Response {
       "content-security-policy",
       "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
     );
+    headers.set("cache-control", "no-store");
+  } else {
     headers.set("cache-control", "no-store");
   }
   return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });

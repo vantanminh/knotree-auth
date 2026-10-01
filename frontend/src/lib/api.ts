@@ -67,11 +67,29 @@ export function safeReturnTo(value: string | null): string | null {
   return value;
 }
 
-export function continueAfterAuth(returnTo: string | null) {
+export function destinationAfterAuth(returnTo: string | null): string {
   const safe = safeReturnTo(returnTo);
-  if (safe?.startsWith("/oauth/")) {
-    window.location.assign(safe);
-    return;
+  if (safe?.startsWith("/oauth/")) return safe;
+  if (
+    safe &&
+    safe !== "/" &&
+    safe !== "/sign-in" &&
+    !safe.startsWith("/sign-in?") &&
+    safe !== "/sign-up" &&
+    !safe.startsWith("/sign-up?")
+  ) {
+    return safe;
   }
-  window.location.assign(safe && safe !== "/sign-in" ? safe : "/account");
+  return "/account";
+}
+
+export function continueAfterAuth(returnTo: string | null) {
+  window.location.assign(destinationAfterAuth(returnTo));
+}
+
+export function signInLocation(): string {
+  const path = `${window.location.pathname}${window.location.search}`;
+  const safe = safeReturnTo(path);
+  if (!safe || safe === "/" || safe === "/sign-in" || safe.startsWith("/sign-in?")) return "/sign-in";
+  return `/sign-in?return_to=${encodeURIComponent(safe)}`;
 }

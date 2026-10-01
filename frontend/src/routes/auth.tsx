@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { AuthShell } from "../components/shells";
 import { Alert, Button, TextField } from "../components/ui";
-import { ApiError, api, continueAfterAuth, safeReturnTo } from "../lib/api";
+import { ApiError, api, continueAfterAuth, destinationAfterAuth, safeReturnTo } from "../lib/api";
 import type { LoginResponse } from "../lib/types";
 
 function useReturnTo() {
@@ -10,8 +10,50 @@ function useReturnTo() {
   return safeReturnTo(params.get("return_to"));
 }
 
+function CheckingSession() {
+  return (
+    <AuthShell>
+      <p className="text-sm text-muted">Checking your session…</p>
+    </AuthShell>
+  );
+}
+
+function useResumeSession(returnTo: string | null) {
+  const navigate = useNavigate();
+  const [status, setStatus] = useState<"checking" | "anonymous">("checking");
+
+  useEffect(() => {
+    let cancelled = false;
+    void api("/api/v1/me")
+      .then(() => {
+        if (cancelled) return;
+        const destination = destinationAfterAuth(returnTo);
+        if (destination.startsWith("/oauth/")) {
+          window.location.assign(destination);
+          return;
+        }
+        navigate(destination, { replace: true });
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("anonymous");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, returnTo]);
+
+  return status;
+}
+
+export function HomePage() {
+  const status = useResumeSession(null);
+  if (status === "checking") return <CheckingSession />;
+  return <Navigate to="/sign-in" replace />;
+}
+
 export function SignInPage() {
   const returnTo = useReturnTo();
+  const session = useResumeSession(returnTo);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -53,6 +95,8 @@ export function SignInPage() {
 
   const social = (provider: string) =>
     `/api/v1/auth/social/${provider}/start?return_to=${encodeURIComponent(returnTo ?? "/account")}`;
+
+  if (session === "checking") return <CheckingSession />;
 
   return (
     <AuthShell>
@@ -105,6 +149,7 @@ export function SignInPage() {
 }
 
 export function SignUpPage() {
+  const session = useResumeSession(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -133,6 +178,8 @@ export function SignUpPage() {
       setPending(false);
     }
   }
+
+  if (session === "checking") return <CheckingSession />;
 
   return (
     <AuthShell>
