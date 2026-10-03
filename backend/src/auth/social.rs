@@ -193,10 +193,12 @@ pub async fn finish(
     .await?;
     let email_user = if profile.email_verified {
         if let Some(email) = &profile.email {
-            sqlx::query_scalar::<_, Uuid>("SELECT user_id FROM user_emails WHERE email = $1")
-                .bind(email)
-                .fetch_optional(&state.db)
-                .await?
+            sqlx::query_scalar::<_, Uuid>(
+                "SELECT user_id FROM user_emails WHERE email = $1 AND verified_at IS NOT NULL",
+            )
+            .bind(email)
+            .fetch_optional(&state.db)
+            .await?
         } else {
             None
         }
@@ -554,8 +556,13 @@ async fn create_social_user(
         .name
         .as_ref()
         .map(|name| name.chars().take(80).collect::<String>());
-    sqlx::query("INSERT INTO users (id, display_name, status, created_at, updated_at, locale) VALUES ($1,$2,'active',$3,$3,$4)")
+    let username =
+        super::identity::allocate_username(&mut tx, email.split('@').next().unwrap_or_default())
+            .await?;
+    super::identity::release_stale_claim(&mut tx, &email, state.config.verification_hours).await?;
+    sqlx::query("INSERT INTO users (id, username, display_name, status, created_at, updated_at, locale) VALUES ($1,$2,$3,'active',$4,$4,$5)")
         .bind(user_id)
+        .bind(&username)
         .bind(&display_name)
         .bind(now)
         .bind(meta.locale.as_str())

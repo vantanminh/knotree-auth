@@ -27,7 +27,7 @@ it("renders a focused sign-in form when the browser has no session", async () =>
   apiMock.mockRejectedValue(new ApiError(401, "UNAUTHENTICATED", "Sign in required."));
   renderAt("/sign-in");
   expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
-  expect(screen.getByLabelText("Email")).toBeInTheDocument();
+  expect(screen.getByLabelText("Email or username")).toBeInTheDocument();
   expect(screen.getByLabelText("Password")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
 });

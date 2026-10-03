@@ -14,16 +14,23 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password, password_confirm]
+              required: [username, email, password, password_confirm]
               properties:
+                username:
+                  type: string
+                  pattern: "^[a-z0-9](?:[a-z0-9-]{1,37}[a-z0-9])$"
+                  description: Case-insensitive, stored lowercase. Reserved names are rejected.
                 email: { type: string, format: email }
                 password: { type: string }
                 password_confirm: { type: string }
+                return_to:
+                  type: string
+                  description: Local path (usually a pending /oauth/authorize request) returned after email verification.
       responses:
         "200":
           description: Account created and verification email queued
         "409":
-          description: Email already registered
+          description: Email or username already taken
   /api/v1/auth/login:
     post:
       summary: Password login
@@ -33,9 +40,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password]
+              required: [identifier, password]
               properties:
-                email: { type: string }
+                identifier:
+                  type: string
+                  description: The username or any verified email of the account (`email` is accepted as an alias).
                 password: { type: string }
       responses:
         "200":
@@ -59,6 +68,56 @@ paths:
       responses:
         "200": { description: Profile without secrets }
         "401": { description: No session }
+  /api/v1/me/emails:
+    get:
+      summary: List the account's emails (up to three, one primary)
+      responses:
+        "200": { description: Emails with primary and verified flags }
+    post:
+      summary: Add an email and send a confirmation link (needs a recent sign-in)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200": { description: Confirmation link sent }
+        "400": { description: Three emails already on the account }
+        "409": { description: Email used by another account }
+  /api/v1/me/emails/{id}:
+    delete:
+      summary: Remove a non-primary email (needs a recent sign-in)
+      responses:
+        "200": { description: Removed }
+        "400": { description: The primary email cannot be removed }
+  /api/v1/me/emails/{id}/primary:
+    post:
+      summary: Make a verified email primary (needs a recent sign-in)
+      responses:
+        "200": { description: Primary email changed }
+  /api/v1/me/emails/{id}/resend:
+    post:
+      summary: Resend the confirmation link of an unverified email
+      responses:
+        "200": { description: Link sent }
+  /api/v1/me/username:
+    patch:
+      summary: Change the username (needs a recent sign-in, once every 30 days)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
+              properties:
+                username: { type: string }
+      responses:
+        "200": { description: Username changed; the old one stays reserved for 30 days }
   /api/v1/me/authorizations:
     get:
       summary: Services (OAuth clients) the current user has authorized
@@ -143,6 +202,11 @@ paths:
           name: state
           required: true
           schema: { type: string }
+        - in: query
+          name: screen_hint
+          required: false
+          schema: { type: string, enum: [signup] }
+          description: Without a session, open account creation instead of sign-in.
       responses:
         "302": { description: Redirect to the client or to sign-in }
         "400": { description: Invalid client or redirect URI }

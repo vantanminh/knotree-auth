@@ -88,7 +88,7 @@ impl AppError {
 
     pub fn public_message(&self) -> String {
         match self {
-            Self::InvalidCredentials => "The email or password is incorrect.".into(),
+            Self::InvalidCredentials => "The username, email or password is incorrect.".into(),
             Self::RateLimited { .. } => "Too many attempts. Try again later.".into(),
             Self::Validation(msg)
             | Self::Conflict(msg)

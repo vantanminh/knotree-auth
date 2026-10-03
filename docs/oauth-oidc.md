@@ -16,4 +16,4 @@ Endpoints:
 
 First-party clients skip the consent screen. Third-party clients stop on `/oauth/consent`. The consent record is revalidated before a code is issued.
 
-ID tokens are RS256 and include `iss`, `sub`, `aud`, `exp`, `iat`, `auth_time`, `nonce`, `amr`, and email or name claims when those scopes were granted. Access tokens stay opaque.
+ID tokens are RS256 and include `iss`, `sub`, `aud`, `exp`, `iat`, `auth_time`, `nonce`, `amr`, and email or name claims when those scopes were granted. The `profile` scope also adds `preferred_username`, the account's username. `email` is always the primary email. Usernames and emails can change, so relying services must key users on `sub` only and refresh the other claims at every sign-in. Access tokens stay opaque.

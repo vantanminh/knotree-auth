@@ -1,5 +1,16 @@
+export type AccountEmail = {
+  id: string;
+  email: string;
+  primary: boolean;
+  verified: boolean;
+  created_at: string;
+};
+
 export type Profile = {
   id: string;
+  username: string;
+  username_changed_at: string | null;
+  emails: AccountEmail[];
   display_name: string | null;
   status: string;
   created_at: string;

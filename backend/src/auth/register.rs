@@ -11,6 +11,7 @@ use chrono::{Duration, Utc};
 use uuid::Uuid;
 
 pub struct RegisterInput {
+    pub username: String,
     pub email: String,
     pub password: String,
     pub password_confirm: String,
@@ -28,6 +29,7 @@ pub async fn register(
         return Err(AppError::Validation("Passwords do not match."));
     }
     let email = normalize_email(&input.email)?;
+    let username = super::identity::normalize_username(&input.username)?;
     validate_password(&input.password, &email)?;
     rate_limit::enforce(
         state,
@@ -54,18 +56,24 @@ pub async fn register(
     let token = random_token()?;
     let challenge_metadata = verification_metadata(input.return_to.as_deref());
     let mut tx = state.db.begin().await?;
+    super::identity::claim_username(&mut tx, &username, None).await?;
+    super::identity::release_stale_claim(&mut tx, &email, state.config.verification_hours).await?;
     let inserted = sqlx::query(
         r#"
-        INSERT INTO users (id, status, created_at, updated_at, password_changed_at, locale)
-        VALUES ($1, 'active', $2, $2, $2, $3)
+        INSERT INTO users (id, username, status, created_at, updated_at, password_changed_at, locale)
+        VALUES ($1, $2, 'active', $3, $3, $3, $4)
         "#,
     )
     .bind(user_id)
+    .bind(&username)
     .bind(now)
     .bind(meta.locale.as_str())
     .execute(&mut *tx)
     .await;
     if let Err(err) = inserted {
+        if is_unique_violation(&err) {
+            return Err(AppError::Conflict("That username is already taken."));
+        }
         return Err(AppError::from(err));
     }
     if let Err(err) = sqlx::query(
@@ -91,11 +99,12 @@ pub async fn register(
     sqlx::query(
         r#"
         INSERT INTO identities (id, user_id, provider, provider_subject, email, email_verified, created_at)
-        VALUES ($1, $2, 'password', $3, $3, FALSE, $4)
+        VALUES ($1, $2, 'password', $3, $4, FALSE, $5)
         "#,
     )
     .bind(identity_id)
     .bind(user_id)
+    .bind(user_id.to_string())
     .bind(&email)
     .bind(now)
     .execute(&mut *tx)
@@ -192,7 +201,7 @@ pub async fn verify_email(
         .execute(&mut *tx)
         .await?;
     sqlx::query(
-        "UPDATE identities SET email_verified = TRUE WHERE user_id = $1 AND provider = 'password' AND provider_subject = $2",
+        "UPDATE identities SET email_verified = TRUE WHERE user_id = $1 AND provider = 'password' AND email = $2",
     )
     .bind(user_id)
     .bind(&email)

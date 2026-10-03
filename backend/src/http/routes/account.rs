@@ -42,19 +42,77 @@ pub async fn update_profile(
 }
 
 #[derive(Deserialize)]
-pub struct EmailChangeBody {
+pub struct EmailBody {
     email: String,
 }
 
-pub async fn change_email(
+pub async fn emails(
+    State(state): State<AppState>,
+    auth: AuthSession,
+) -> Result<Json<Value>, AppError> {
+    Ok(Json(json!({
+        "items": auth::list_emails(&state, auth.session.user_id).await?,
+        "limit": auth::MAX_EMAILS,
+    })))
+}
+
+pub async fn add_email(
     State(state): State<AppState>,
     auth: AuthSession,
     Meta(meta): Meta,
     Csrf: Csrf,
-    Json(body): Json<EmailChangeBody>,
+    Json(body): Json<EmailBody>,
 ) -> Result<Json<Value>, AppError> {
-    auth::request_email_change(&state, &auth.session, &body.email, &meta).await?;
+    let id = auth::add_email(&state, &auth.session, &body.email, &meta).await?;
+    Ok(Json(json!({"status": "verification_sent", "id": id})))
+}
+
+pub async fn resend_email(
+    State(state): State<AppState>,
+    auth: AuthSession,
+    Csrf: Csrf,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    auth::resend_added_email(&state, &auth.session, id).await?;
     Ok(Json(json!({"status": "verification_sent"})))
+}
+
+pub async fn make_primary_email(
+    State(state): State<AppState>,
+    auth: AuthSession,
+    Meta(meta): Meta,
+    Csrf: Csrf,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    auth::make_primary(&state, &auth.session, id, &meta).await?;
+    Ok(Json(json!({"status": "primary"})))
+}
+
+pub async fn remove_email(
+    State(state): State<AppState>,
+    auth: AuthSession,
+    Meta(meta): Meta,
+    Csrf: Csrf,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    auth::remove_email(&state, &auth.session, id, &meta).await?;
+    Ok(Json(json!({"status": "removed"})))
+}
+
+#[derive(Deserialize)]
+pub struct UsernameBody {
+    username: String,
+}
+
+pub async fn change_username(
+    State(state): State<AppState>,
+    auth: AuthSession,
+    Meta(meta): Meta,
+    Csrf: Csrf,
+    Json(body): Json<UsernameBody>,
+) -> Result<Json<Value>, AppError> {
+    let username = auth::change_username(&state, &auth.session, &body.username, &meta).await?;
+    Ok(Json(json!({"status": "updated", "username": username})))
 }
 
 pub async fn security(

@@ -102,7 +102,7 @@ export function HomePage() {
 export function SignInPage() {
   const returnTo = useReturnTo();
   const session = useResumeSession(returnTo);
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -115,7 +115,7 @@ export function SignInPage() {
     try {
       const result = await api<LoginResponse>("/api/v1/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ identifier, password }),
       });
       if (result.status === "mfa_required") {
         sessionStorage.setItem("knotree.mfa", JSON.stringify({ ...result, return_to: returnTo }));
@@ -153,15 +153,14 @@ export function SignInPage() {
       <form className="grid gap-4" onSubmit={submit}>
         {error ? <Alert>{error}</Alert> : null}
         <TextField
-          label={t("Email")}
-          name="email"
-          type="email"
+          label={t("Email or username")}
+          name="identifier"
+          type="text"
           autoComplete="username"
-          placeholder={t("you@example.com")}
           required
           autoFocus
-          value={email}
-          onChange={setEmail}
+          value={identifier}
+          onChange={setIdentifier}
         />
         <TextField
           label={t("Password")}
@@ -191,6 +190,7 @@ export function SignUpPage() {
   const returnTo = useReturnTo();
   const session = useResumeSession(returnTo);
   const clientName = useClientName(returnTo);
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -210,7 +210,7 @@ export function SignUpPage() {
     try {
       await api("/api/v1/auth/register", {
         method: "POST",
-        body: JSON.stringify({ email, password, password_confirm: confirm, return_to: returnTo }),
+        body: JSON.stringify({ username, email, password, password_confirm: confirm, return_to: returnTo }),
       });
       sessionStorage.setItem("knotree.pending-email", email);
       navigate("/verify-email");
@@ -243,13 +243,23 @@ export function SignUpPage() {
       <form className="grid gap-4" onSubmit={submit}>
         {error ? <Alert>{error}</Alert> : null}
         <TextField
+          label={t("Username")}
+          name="username"
+          autoComplete="username"
+          placeholder={t("ada-lovelace")}
+          hint={t("3–39 letters, numbers or hyphens. You can sign in with it.")}
+          required
+          autoFocus
+          value={username}
+          onChange={setUsername}
+        />
+        <TextField
           label={t("Email")}
           name="email"
           type="email"
           autoComplete="email"
           placeholder={t("you@example.com")}
           required
-          autoFocus
           value={email}
           onChange={setEmail}
         />
@@ -430,7 +440,7 @@ export function ForgotPasswordPage() {
     try {
       const body = await api<{ message: string }>("/api/v1/auth/password/forgot", {
         method: "POST",
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ identifier: email }),
       });
       setMessage(t(body.message));
     } catch (err) {
@@ -460,16 +470,14 @@ export function ForgotPasswordPage() {
       ) : (
         <>
           <AuthHeading icon={<KeyIcon size={20} />} title={t("Reset password")}>
-            {t("We’ll email a link if an account exists for this address.")}
+            {t("We’ll email a link to your verified address if the account exists.")}
           </AuthHeading>
           <form className="grid gap-4" onSubmit={submit}>
             {error ? <Alert>{error}</Alert> : null}
             <TextField
-              label={t("Email")}
-              name="email"
-              type="email"
-              autoComplete="email"
-              placeholder={t("you@example.com")}
+              label={t("Email or username")}
+              name="identifier"
+              autoComplete="username"
               required
               autoFocus
               value={email}
