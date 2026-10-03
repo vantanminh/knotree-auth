@@ -2,9 +2,11 @@ import { expect, test } from "@playwright/test";
 
 test("a new account can verify email and sign in", async ({ page, request }) => {
   const email = `e2e-${Date.now()}@example.com`;
+  const username = `e2e-${Date.now()}`;
   const password = "correct-horse-battery";
 
   await page.goto("/sign-up");
+  await page.getByLabel("Username").fill(username);
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByLabel("Confirm password").fill(password);
@@ -22,7 +24,7 @@ test("a new account can verify email and sign in", async ({ page, request }) => 
   await expect(page.getByText("Email verified. You can sign in.")).toBeVisible();
 
   await page.goto("/sign-in");
-  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Email or username").fill(username);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("heading", { name: "Account" })).toBeVisible();

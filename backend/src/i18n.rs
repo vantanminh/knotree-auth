@@ -96,7 +96,16 @@ pub fn translate(message: &str, locale: Locale) -> &str {
 }
 
 const VI: &[(&str, &str)] = &[
-    ("The email or password is incorrect.", "Email hoặc mật khẩu không đúng."),
+    ("The username, email or password is incorrect.", "Tên người dùng, email hoặc mật khẩu không đúng."),
+    ("Usernames are 3 to 39 letters, numbers or hyphens and cannot start or end with a hyphen.", "Tên người dùng dài 3 đến 39 ký tự gồm chữ, số hoặc dấu gạch ngang, không bắt đầu hay kết thúc bằng dấu gạch ngang."),
+    ("That username is reserved.", "Tên người dùng này đã được giữ lại."),
+    ("That username is already taken.", "Tên người dùng này đã có người dùng."),
+    ("Could not pick a username. Try again.", "Không chọn được tên người dùng. Hãy thử lại."),
+    ("You can change your username once every 30 days.", "Bạn chỉ có thể đổi tên người dùng 30 ngày một lần."),
+    ("An account can have up to three email addresses.", "Mỗi tài khoản có tối đa ba địa chỉ email."),
+    ("This email is already used by a Knotree account.", "Email này đã được một tài khoản Knotree sử dụng."),
+    ("Verify this email before making it primary.", "Hãy xác minh email này trước khi đặt làm email chính."),
+    ("Make another email primary before removing this one.", "Hãy đặt email khác làm email chính trước khi gỡ email này."),
     ("Too many attempts. Try again later.", "Bạn đã thử quá nhiều lần. Vui lòng thử lại sau."),
     ("Sign in to continue.", "Đăng nhập để tiếp tục."),
     ("Not found.", "Không tìm thấy."),

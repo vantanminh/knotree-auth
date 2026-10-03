@@ -315,10 +315,13 @@ pub async fn list_users(state: &AppState, query: UserQuery) -> AppResult<Value> 
                EXISTS(
                    SELECT 1 FROM mfa_methods m
                    WHERE m.user_id = u.id AND m.enabled_at IS NOT NULL AND m.disabled_at IS NULL
-               ) AS mfa
+               ) AS mfa,
+               u.username
         FROM users u
         JOIN user_emails e ON e.user_id = u.id AND e.is_primary
-        WHERE ($1::text IS NULL OR u.id::text = $1 OR e.email ILIKE $2 ESCAPE '\' OR u.display_name ILIKE $2 ESCAPE '\')
+        WHERE ($1::text IS NULL OR u.id::text = $1 OR u.username ILIKE $2 ESCAPE '\'
+               OR EXISTS (SELECT 1 FROM user_emails se WHERE se.user_id = u.id AND se.email ILIKE $2 ESCAPE '\')
+               OR u.display_name ILIKE $2 ESCAPE '\')
           AND ($3::text IS NULL OR u.status = $3)
           AND ($4::bool IS NULL OR ($4 = TRUE AND e.verified_at IS NOT NULL) OR ($4 = FALSE AND e.verified_at IS NULL))
           AND ($5::bool IS NULL OR $5 = EXISTS(
@@ -338,6 +341,7 @@ pub async fn list_users(state: &AppState, query: UserQuery) -> AppResult<Value> 
         Option<DateTime<Utc>>,
         String,
         bool,
+        String,
     )> = sqlx::query_as(&sql)
         .bind(search.as_deref())
         .bind(like)
@@ -362,6 +366,7 @@ pub async fn list_users(state: &AppState, query: UserQuery) -> AppResult<Value> 
                 "last_login_at": row.5,
                 "status": row.6,
                 "mfa_enabled": row.7,
+                "username": row.8,
             })
         })
         .collect::<Vec<_>>();
@@ -389,6 +394,11 @@ pub async fn user_detail(state: &AppState, user_id: Uuid) -> AppResult<Value> {
     .bind(user_id)
     .fetch_all(&state.db)
     .await?;
+    let username: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_one(&state.db)
+        .await?;
+    let emails = auth::list_emails(state, user_id).await?;
     let sessions: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM sessions WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()",
     )
@@ -400,6 +410,8 @@ pub async fn user_detail(state: &AppState, user_id: Uuid) -> AppResult<Value> {
     Ok(json!({
         "id": row.0,
         "display_name": row.1,
+        "username": username,
+        "emails": emails,
         "email": row.2,
         "created_at": row.3,
         "last_login_at": row.4,

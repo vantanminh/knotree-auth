@@ -559,9 +559,9 @@ pub async fn userinfo(state: &AppState, access_token: &str) -> AppResult<Value> 
     if revoked_at.is_some() || expires_at <= Utc::now() {
         return Err(AppError::Unauthenticated);
     }
-    let profile: Option<(Option<String>, String, Option<DateTime<Utc>>)> = sqlx::query_as(
+    let profile: Option<(Option<String>, String, Option<DateTime<Utc>>, String)> = sqlx::query_as(
         r#"
-        SELECT u.display_name, e.email, e.verified_at
+        SELECT u.display_name, e.email, e.verified_at, u.username
         FROM users u
         JOIN user_emails e ON e.user_id = u.id AND e.is_primary
         WHERE u.id = $1 AND u.status = 'active'
@@ -570,7 +570,7 @@ pub async fn userinfo(state: &AppState, access_token: &str) -> AppResult<Value> 
     .bind(user_id)
     .fetch_optional(&state.db)
     .await?;
-    let Some((name, email, verified)) = profile else {
+    let Some((name, email, verified, username)) = profile else {
         return Err(AppError::Unauthenticated);
     };
     let mut body = json!({"sub": user_id});
@@ -580,6 +580,7 @@ pub async fn userinfo(state: &AppState, access_token: &str) -> AppResult<Value> 
     }
     if scopes.iter().any(|scope| scope == "profile") {
         body["name"] = json!(name);
+        body["preferred_username"] = json!(username);
     }
     Ok(body)
 }
@@ -601,7 +602,7 @@ pub fn discovery(config: &AppConfig) -> Value {
         "code_challenge_methods_supported": ["S256"],
         "scopes_supported": ["openid", "profile", "email", "offline_access"],
         "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "none"],
-        "claims_supported": ["sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "email", "email_verified", "name", "amr"]
+        "claims_supported": ["sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "email", "email_verified", "name", "preferred_username", "amr"]
     })
 }
 
@@ -781,9 +782,9 @@ async fn sign_id_token(
     scopes: &[String],
     nonce: Option<&str>,
 ) -> AppResult<String> {
-    let profile: (Option<String>, String, Option<DateTime<Utc>>) = sqlx::query_as(
+    let profile: (Option<String>, String, Option<DateTime<Utc>>, String) = sqlx::query_as(
         r#"
-        SELECT u.display_name, e.email, e.verified_at
+        SELECT u.display_name, e.email, e.verified_at, u.username
         FROM users u
         JOIN user_emails e ON e.user_id = u.id AND e.is_primary
         WHERE u.id = $1
@@ -832,6 +833,7 @@ async fn sign_id_token(
     }
     if scopes.iter().any(|scope| scope == "profile") {
         claims["name"] = json!(profile.0);
+        claims["preferred_username"] = json!(profile.3);
     }
     let key = state.config.active_jwt();
     let pem = key

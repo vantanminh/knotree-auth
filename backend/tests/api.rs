@@ -18,9 +18,7 @@ struct Api {
     http: Client,
 }
 
-#[tokio::test]
-async fn identity_platform_flows() {
-    let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().await;
+async fn setup() -> (knotree_accounts::AppState, Api) {
     let db_url = std::env::var("TEST_DATABASE_URL")
         .unwrap_or_else(|_| "postgres://knotree:knotree@127.0.0.1/knotree_accounts_test".into());
     let config = for_tests(&db_url).expect("test config");
@@ -67,6 +65,13 @@ async fn identity_platform_flows() {
             .build()
             .unwrap(),
     };
+    (state, api)
+}
+
+#[tokio::test]
+async fn identity_platform_flows() {
+    let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let (state, api) = setup().await;
 
     let email = format!("ada-{}@example.com", uuid_suffix());
     let password = "correct horse battery";
@@ -74,7 +79,7 @@ async fn identity_platform_flows() {
     let created = api
         .post(
             "/api/v1/auth/register",
-            json!({"email": email, "password": password, "password_confirm": password}),
+            json!({"username": format!("ada-{}", uuid_suffix()), "email": email, "password": password, "password_confirm": password}),
         )
         .await;
     assert_eq!(created.status(), StatusCode::OK, "{}", created.text);
@@ -82,7 +87,7 @@ async fn identity_platform_flows() {
     let duplicate = api
         .post(
             "/api/v1/auth/register",
-            json!({"email": email, "password": password, "password_confirm": password}),
+            json!({"username": format!("ada-{}", uuid_suffix()), "email": email, "password": password, "password_confirm": password}),
         )
         .await;
     assert_eq!(duplicate.status(), StatusCode::CONFLICT);
@@ -100,7 +105,7 @@ async fn identity_platform_flows() {
         )
         .await;
     assert_eq!(bad_login.status(), StatusCode::UNAUTHORIZED);
-    assert!(bad_login.text.contains("email or password"));
+    assert!(bad_login.text.contains("username, email or password"));
     assert!(!bad_login.text.to_lowercase().contains("does not exist"));
 
     let missing_csrf = api
@@ -354,6 +359,9 @@ async fn identity_platform_flows() {
     assert_eq!(userinfo.status(), StatusCode::OK);
     let userinfo: Value = userinfo.json().await.unwrap();
     assert_eq!(userinfo["email"], email);
+    assert!(userinfo["preferred_username"]
+        .as_str()
+        .is_some_and(|name| name.starts_with("ada-")));
 
     let authorized = api.get("/api/v1/me/authorizations").await;
     assert_eq!(authorized.status, StatusCode::OK, "{}", authorized.text);
@@ -550,6 +558,244 @@ async fn identity_platform_flows() {
 }
 
 #[tokio::test]
+async fn sign_up_hint_and_return_to_survive_email_verification() {
+    let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let (_state, api) = setup().await;
+    let authorize = format!(
+        "/oauth/authorize?client_id=knotree-study&redirect_uri={}&response_type=code&scope=openid&state=state-value-1&code_challenge={}&code_challenge_method=S256",
+        url_encode("https://study.knotree.com/auth/callback"),
+        "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+    );
+
+    let sign_in = api.get_response(&authorize).await;
+    assert_eq!(sign_in.status(), StatusCode::TEMPORARY_REDIRECT);
+    let location = sign_in.headers()[LOCATION].to_str().unwrap().to_owned();
+    assert!(location.starts_with("/sign-in?return_to="), "{location}");
+
+    let sign_up = api
+        .get_response(&format!("{authorize}&screen_hint=signup"))
+        .await;
+    assert_eq!(sign_up.status(), StatusCode::TEMPORARY_REDIRECT);
+    let location = sign_up.headers()[LOCATION].to_str().unwrap().to_owned();
+    assert!(location.starts_with("/sign-up?return_to="), "{location}");
+    let return_to = query_param(&location, "return_to").unwrap();
+    assert!(return_to.starts_with("/oauth/authorize?"), "{return_to}");
+    assert!(!return_to.contains("screen_hint"), "{return_to}");
+
+    let email = format!("grace-{}@example.com", uuid_suffix());
+    let password = "correct horse battery";
+    api.csrf().await;
+    let created = api
+        .post(
+            "/api/v1/auth/register",
+            json!({"username": format!("grace-{}", uuid_suffix()), "email": email, "password": password, "password_confirm": password, "return_to": return_to}),
+        )
+        .await;
+    assert_eq!(created.status(), StatusCode::OK, "{}", created.text);
+    let token = api.mailbox_token(&email, "verify-email").await;
+    let verified = api
+        .post("/api/v1/auth/email/verify", json!({"token": token}))
+        .await;
+    assert_eq!(verified.status(), StatusCode::OK, "{}", verified.text);
+    assert_eq!(verified.json["return_to"], return_to);
+
+    let other = format!("hopper-{}@example.com", uuid_suffix());
+    let created = api
+        .post(
+            "/api/v1/auth/register",
+            json!({"username": format!("hopper-{}", uuid_suffix()), "email": other, "password": password, "password_confirm": password, "return_to": "https://evil.example/"}),
+        )
+        .await;
+    assert_eq!(created.status(), StatusCode::OK, "{}", created.text);
+    let token = api.mailbox_token(&other, "verify-email").await;
+    let verified = api
+        .post("/api/v1/auth/email/verify", json!({"token": token}))
+        .await;
+    assert_eq!(verified.json["return_to"], Value::Null);
+}
+
+#[tokio::test]
+async fn sign_in_with_username_or_any_verified_email() {
+    let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let (_state, api) = setup().await;
+    let suffix = &uuid_suffix()[20..];
+    let username = format!("lin-{suffix}");
+    let first = format!("lin-{suffix}@example.com");
+    let second = format!("lin-second-{suffix}@example.com");
+    let third = format!("lin-third-{suffix}@example.com");
+    let password = "correct horse battery";
+    let login = |identifier: String| json!({"identifier": identifier, "password": password});
+
+    api.csrf().await;
+    let created = api
+        .post(
+            "/api/v1/auth/register",
+            json!({"username": username.to_uppercase(), "email": first, "password": password, "password_confirm": password}),
+        )
+        .await;
+    assert_eq!(created.status(), StatusCode::OK, "{}", created.text);
+    let taken = api
+        .post(
+            "/api/v1/auth/register",
+            json!({"username": username, "email": format!("other-{suffix}@example.com"), "password": password, "password_confirm": password}),
+        )
+        .await;
+    assert_eq!(taken.status(), StatusCode::CONFLICT, "{}", taken.text);
+    let reserved = api
+        .post(
+            "/api/v1/auth/register",
+            json!({"username": "admin", "email": format!("admin-{suffix}@example.com"), "password": password, "password_confirm": password}),
+        )
+        .await;
+    assert_eq!(
+        reserved.status(),
+        StatusCode::BAD_REQUEST,
+        "{}",
+        reserved.text
+    );
+
+    // An unverified email never signs in; the username does.
+    let unverified = api.post("/api/v1/auth/login", login(first.clone())).await;
+    assert_eq!(
+        unverified.status(),
+        StatusCode::UNAUTHORIZED,
+        "{}",
+        unverified.text
+    );
+    let token = api.mailbox_token(&first, "verify-email").await;
+    api.post("/api/v1/auth/email/verify", json!({"token": token}))
+        .await;
+    let by_email = api.post("/api/v1/auth/login", login(first.clone())).await;
+    assert_eq!(
+        by_email.json["status"], "authenticated",
+        "{}",
+        by_email.text
+    );
+    api.post("/api/v1/auth/logout", json!({})).await;
+    let by_username = api
+        .post("/api/v1/auth/login", login(username.clone()))
+        .await;
+    assert_eq!(
+        by_username.json["status"], "authenticated",
+        "{}",
+        by_username.text
+    );
+    let me = api.get("/api/v1/me").await;
+    assert_eq!(me.json["username"], username);
+    assert_eq!(me.json["emails"].as_array().unwrap().len(), 1);
+
+    // Add a second email, confirm it, and sign in with it.
+    let added = api
+        .post("/api/v1/me/emails", json!({"email": second}))
+        .await;
+    assert_eq!(added.status(), StatusCode::OK, "{}", added.text);
+    let second_id = added.json["id"].as_str().unwrap().to_owned();
+    let pending = api.post("/api/v1/auth/login", login(second.clone())).await;
+    assert_eq!(pending.status(), StatusCode::UNAUTHORIZED);
+    let token = api.mailbox_token(&second, "verify-added-email").await;
+    let confirmed = api
+        .post("/api/v1/auth/email/verify", json!({"token": token}))
+        .await;
+    assert_eq!(
+        confirmed.json["status"], "email_added",
+        "{}",
+        confirmed.text
+    );
+
+    // A third stays unverified; a fourth is over the limit.
+    let added = api.post("/api/v1/me/emails", json!({"email": third})).await;
+    assert_eq!(added.status(), StatusCode::OK, "{}", added.text);
+    let third_id = added.json["id"].as_str().unwrap().to_owned();
+    let fourth = api
+        .post(
+            "/api/v1/me/emails",
+            json!({"email": format!("lin-fourth-{suffix}@example.com")}),
+        )
+        .await;
+    assert_eq!(fourth.status(), StatusCode::BAD_REQUEST, "{}", fourth.text);
+    let unverified_primary = api
+        .post(&format!("/api/v1/me/emails/{third_id}/primary"), json!({}))
+        .await;
+    assert_eq!(unverified_primary.status(), StatusCode::BAD_REQUEST);
+
+    // Someone else cannot take an email that is already on this account.
+    let duplicate = api
+        .post(
+            "/api/v1/auth/register",
+            json!({"username": format!("dup-{suffix}"), "email": second, "password": password, "password_confirm": password}),
+        )
+        .await;
+    assert_eq!(
+        duplicate.status(),
+        StatusCode::CONFLICT,
+        "{}",
+        duplicate.text
+    );
+
+    let primary = api
+        .post(&format!("/api/v1/me/emails/{second_id}/primary"), json!({}))
+        .await;
+    assert_eq!(primary.status(), StatusCode::OK, "{}", primary.text);
+    let me = api.get("/api/v1/me").await;
+    assert_eq!(me.json["email"], second);
+    let remove_primary = api.delete(&format!("/api/v1/me/emails/{second_id}")).await;
+    assert_eq!(remove_primary.status(), StatusCode::BAD_REQUEST);
+    let first_id = me.json["emails"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["email"] == first)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let removed = api.delete(&format!("/api/v1/me/emails/{first_id}")).await;
+    assert_eq!(removed.status(), StatusCode::OK, "{}", removed.text);
+
+    api.post("/api/v1/auth/logout", json!({})).await;
+    let gone = api.post("/api/v1/auth/login", login(first.clone())).await;
+    assert_eq!(gone.status(), StatusCode::UNAUTHORIZED);
+    let by_second = api.post("/api/v1/auth/login", login(second.clone())).await;
+    assert_eq!(
+        by_second.json["status"], "authenticated",
+        "{}",
+        by_second.text
+    );
+
+    // A username rename holds the old name and is limited to once a month.
+    let renamed_to = format!("lin-new-{suffix}");
+    let renamed = api
+        .post_method_patch("/api/v1/me/username", json!({"username": renamed_to}))
+        .await;
+    assert_eq!(renamed.status(), StatusCode::OK, "{}", renamed.text);
+    let again = api
+        .post_method_patch(
+            "/api/v1/me/username",
+            json!({"username": format!("lin-again-{suffix}")}),
+        )
+        .await;
+    assert_eq!(again.status(), StatusCode::BAD_REQUEST, "{}", again.text);
+    api.post("/api/v1/auth/logout", json!({})).await;
+    let held = api
+        .post(
+            "/api/v1/auth/register",
+            json!({"username": username, "email": format!("held-{suffix}@example.com"), "password": password, "password_confirm": password}),
+        )
+        .await;
+    assert_eq!(held.status(), StatusCode::CONFLICT, "{}", held.text);
+
+    // A username reset link goes to the verified primary email.
+    let forgot = api
+        .post(
+            "/api/v1/auth/password/forgot",
+            json!({"identifier": renamed_to}),
+        )
+        .await;
+    assert_eq!(forgot.status(), StatusCode::OK, "{}", forgot.text);
+    api.mailbox_token(&second, "reset-password").await;
+}
+
+#[tokio::test]
 async fn configured_super_admin_must_be_verified_before_existing_admin_is_replaced() {
     let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().await;
     let db_url = std::env::var("TEST_DATABASE_URL")
@@ -562,7 +808,7 @@ async fn configured_super_admin_must_be_verified_before_existing_admin_is_replac
         .execute(&verified_state.db)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO users (id,status,created_at,updated_at,password_changed_at) VALUES ($1,'active',now(),now(),now())")
+    sqlx::query("INSERT INTO users (id,username,status,created_at,updated_at,password_changed_at) VALUES ($1,'u-'||replace($1::text,'-',''),'active',now(),now(),now())")
         .bind(verified_id)
         .execute(&verified_state.db)
         .await
@@ -579,7 +825,7 @@ async fn configured_super_admin_must_be_verified_before_existing_admin_is_replac
         .expect("verified active user becomes administrator");
 
     let unverified_id = uuid::Uuid::now_v7();
-    sqlx::query("INSERT INTO users (id,status,created_at,updated_at,password_changed_at) VALUES ($1,'active',now(),now(),now())")
+    sqlx::query("INSERT INTO users (id,username,status,created_at,updated_at,password_changed_at) VALUES ($1,'u-'||replace($1::text,'-',''),'active',now(),now(),now())")
         .bind(unverified_id)
         .execute(&verified_state.db)
         .await
@@ -643,6 +889,11 @@ impl Api {
                 .json(&body),
         )
         .await
+    }
+
+    async fn delete(&self, path: &str) -> Response {
+        self.send(self.http.delete(format!("{}{path}", self.base)))
+            .await
     }
 
     async fn get(&self, path: &str) -> Response {

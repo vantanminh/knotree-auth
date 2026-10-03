@@ -54,6 +54,7 @@ type Stats = {
 
 type UserRow = {
   id: string;
+  username?: string;
   display_name: string | null;
   email: string;
   email_verified: boolean;
@@ -65,6 +66,8 @@ type UserRow = {
 
 type UserDetail = {
   id: string;
+  username?: string;
+  emails?: { id: string; email: string; primary: boolean; verified: boolean }[];
   display_name: string | null;
   email: string;
   created_at: string;
@@ -403,6 +406,7 @@ export function AdminUsers() {
                             {user.email}
                           </Link>
                           <span className="flex items-center gap-1.5 text-[12.5px] text-muted">
+                            {user.username ? `@${user.username} · ` : null}
                             {user.display_name || t("No name")}
                             {!user.email_verified ? <span className="text-amber">{t("· Unverified")}</span> : null}
                           </span>
@@ -559,6 +563,14 @@ export function AdminUser() {
             </span>
           </Detail>
           <Detail label={t("Name")}>{user.display_name || <span className="text-muted">{t("Not set")}</span>}</Detail>
+          <Detail label={t("Username")}>{user.username ?? <span className="text-muted">{t("Not set")}</span>}</Detail>
+          {user.emails && user.emails.length > 1 ? (
+            <Detail label={t("Email addresses")}>
+              {user.emails
+                .map((item) => `${item.email}${item.primary ? ` (${t("Primary")})` : ""}${item.verified ? "" : ` (${t("Unverified")})`}`)
+                .join(", ")}
+            </Detail>
+          ) : null}
           <Detail label={t("Created")}>{formatWhen(user.created_at)}</Detail>
           <Detail label={t("Last sign-in")}>{formatWhen(user.last_login_at)}</Detail>
           <Detail label={t("Active sessions")}>

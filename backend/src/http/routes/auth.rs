@@ -11,14 +11,18 @@ use std::collections::HashMap;
 
 #[derive(Deserialize)]
 pub struct RegisterBody {
+    username: String,
     email: String,
     password: String,
     password_confirm: String,
+    return_to: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct LoginBody {
-    email: String,
+    /// A username or any verified email of the account.
+    #[serde(alias = "email")]
+    identifier: String,
     password: String,
 }
 
@@ -81,9 +85,11 @@ pub async fn register(
     let user_id = auth::register(
         &state,
         auth::RegisterInput {
+            username: body.username,
             email: body.email,
             password: body.password,
             password_confirm: body.password_confirm,
+            return_to: body.return_to,
         },
         &meta,
     )
@@ -103,7 +109,7 @@ pub async fn login(
     Csrf: Csrf,
     Json(body): Json<LoginBody>,
 ) -> Result<(CookieJar, Json<Value>), AppError> {
-    match auth::login(&state, &body.email, &body.password, &meta).await? {
+    match auth::login(&state, &body.identifier, &body.password, &meta).await? {
         LoginResult::Session(issued) => {
             let jar = jar.add(extract::build_cookie(
                 &state.config,
@@ -215,10 +221,10 @@ pub async fn verify_email(
     Json(body): Json<TokenBody>,
 ) -> Result<Json<Value>, AppError> {
     match auth::verify_email(&state, &body.token, &meta).await {
-        Ok(()) => Ok(Json(json!({"status": "verified"}))),
+        Ok(return_to) => Ok(Json(json!({"status": "verified", "return_to": return_to}))),
         Err(AppError::Gone(_)) => {
-            auth::confirm_email_change(&state, &body.token, &meta).await?;
-            Ok(Json(json!({"status": "email_changed"})))
+            auth::confirm_added_email(&state, &body.token, &meta).await?;
+            Ok(Json(json!({"status": "email_added"})))
         }
         Err(err) => Err(err),
     }
@@ -236,13 +242,19 @@ pub async fn resend_email(
     ))
 }
 
+#[derive(Deserialize)]
+pub struct ForgotBody {
+    #[serde(alias = "email")]
+    identifier: String,
+}
+
 pub async fn forgot_password(
     State(state): State<AppState>,
     Meta(meta): Meta,
     Csrf: Csrf,
-    Json(body): Json<EmailBody>,
+    Json(body): Json<ForgotBody>,
 ) -> Result<Json<Value>, AppError> {
-    auth::request_reset(&state, &body.email, &meta).await?;
+    auth::request_reset(&state, &body.identifier, &meta).await?;
     Ok(Json(
         json!({"message": "If an account exists for this email, we've sent password reset instructions."}),
     ))

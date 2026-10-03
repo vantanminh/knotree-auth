@@ -1,13 +1,10 @@
 use super::session::{self, CurrentSession};
 use super::{apply_meta, ClientMeta, NewEvent};
-use crate::email::{self, templates};
-use crate::error::{is_unique_violation, AppError, AppResult};
+use crate::error::{AppError, AppResult};
 use crate::i18n::Locale;
-use crate::security::password::{normalize_email, validate_display_name};
-use crate::security::random::random_token;
-use crate::security::sha256;
+use crate::security::password::validate_display_name;
 use crate::state::AppState;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -20,9 +17,12 @@ pub async fn profile(state: &AppState, session: &CurrentSession) -> AppResult<Va
         Option<DateTime<Utc>>,
         String,
         String,
+        String,
+        Option<DateTime<Utc>>,
     )> = sqlx::query_as(
         r#"
-        SELECT u.id, u.display_name, u.status, u.created_at, e.verified_at, e.email, u.locale
+        SELECT u.id, u.display_name, u.status, u.created_at, e.verified_at, e.email, u.locale,
+               u.username, u.username_changed_at
         FROM users u
         JOIN user_emails e ON e.user_id = u.id AND e.is_primary
         WHERE u.id = $1
@@ -41,8 +41,12 @@ pub async fn profile(state: &AppState, session: &CurrentSession) -> AppResult<Va
     .fetch_all(&state.db)
     .await?;
     let mfa = super::mfa::security_summary(state, session.user_id).await?;
+    let emails = super::identity::list_emails(state, session.user_id).await?;
     Ok(json!({
         "id": row.0,
+        "username": row.7,
+        "username_changed_at": row.8,
+        "emails": emails,
         "display_name": row.1,
         "status": row.2,
         "created_at": row.3,
@@ -88,125 +92,6 @@ pub async fn update_profile(
     Ok(())
 }
 
-pub async fn request_email_change(
-    state: &AppState,
-    session: &CurrentSession,
-    new_email: &str,
-    meta: &ClientMeta,
-) -> AppResult<()> {
-    session::require_step_up(state, session)?;
-    let email = normalize_email(new_email)?;
-    let token = random_token()?;
-    let now = Utc::now();
-    sqlx::query(
-        "UPDATE email_challenges SET consumed_at = now() WHERE user_id = $1 AND purpose = 'email_change' AND consumed_at IS NULL",
-    )
-    .bind(session.user_id)
-    .execute(&state.db)
-    .await?;
-    sqlx::query(
-        r#"
-        INSERT INTO email_challenges (id, user_id, email, purpose, code_hash, created_at, expires_at, metadata)
-        VALUES ($1,$2,$3,'email_change',$4,$5,$6,$7)
-        "#,
-    )
-    .bind(Uuid::now_v7())
-    .bind(session.user_id)
-    .bind(&email)
-    .bind(sha256(token.as_bytes()))
-    .bind(now)
-    .bind(now + Duration::hours(state.config.verification_hours))
-    .bind(json!({"new_email": email}))
-    .execute(&state.db)
-    .await?;
-    let link = format!("{}/verify-email?token={token}", state.config.app_base_url);
-    email::enqueue_and_send(
-        state,
-        &email,
-        templates::verification(
-            crate::i18n::user_locale(&state.db, session.user_id).await,
-            &link,
-        ),
-    )
-    .await?;
-    let mut event = NewEvent::success("EMAIL_CHANGE_REQUESTED", session.user_id);
-    apply_meta(&mut event, meta);
-    super::record(&state.db, event).await?;
-    Ok(())
-}
-
-pub async fn confirm_email_change(
-    state: &AppState,
-    token: &str,
-    meta: &ClientMeta,
-) -> AppResult<()> {
-    let hash = sha256(token.as_bytes());
-    let mut tx = state.db.begin().await?;
-    let row: Option<(Uuid, Uuid, String)> = sqlx::query_as(
-        r#"
-        SELECT id, user_id, email FROM email_challenges
-        WHERE purpose = 'email_change' AND code_hash = $1 AND consumed_at IS NULL AND expires_at > now()
-        FOR UPDATE
-        "#,
-    )
-    .bind(hash)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let Some((id, user_id, email)) = row else {
-        return Err(AppError::Gone(
-            "This verification link is invalid or expired.",
-        ));
-    };
-    let old: Option<String> =
-        sqlx::query_scalar("SELECT email FROM user_emails WHERE user_id = $1 AND is_primary")
-            .bind(user_id)
-            .fetch_optional(&mut *tx)
-            .await?;
-    if let Err(err) = sqlx::query(
-        "UPDATE user_emails SET email = $2, verified_at = now() WHERE user_id = $1 AND is_primary",
-    )
-    .bind(user_id)
-    .bind(&email)
-    .execute(&mut *tx)
-    .await
-    {
-        if is_unique_violation(&err) {
-            return Err(AppError::Conflict(
-                "An account with this email already exists.",
-            ));
-        }
-        return Err(err.into());
-    }
-    sqlx::query(
-        "UPDATE identities SET provider_subject = $2, email = $2, email_verified = TRUE WHERE user_id = $1 AND provider = 'password'",
-    )
-    .bind(user_id)
-    .bind(&email)
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query("UPDATE email_challenges SET consumed_at = now() WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
-    let mut event = NewEvent::success("EMAIL_CHANGED", user_id);
-    apply_meta(&mut event, meta);
-    super::record(&mut *tx, event).await?;
-    tx.commit().await?;
-    if let Some(old) = old {
-        let _ = email::enqueue_and_send(
-            state,
-            &old,
-            templates::security_alert(
-                crate::i18n::user_locale(&state.db, user_id).await,
-                templates::SecurityAlert::EmailChanged,
-                &format!("{}/account/security", state.config.app_base_url),
-            ),
-        )
-        .await;
-    }
-    Ok(())
-}
-
 pub async fn delete_account(
     state: &AppState,
     session: &CurrentSession,
@@ -237,6 +122,21 @@ pub async fn delete_account(
     .bind(&replacement)
     .execute(&mut *tx)
     .await?;
+    // Free the other addresses and the username for new accounts.
+    sqlx::query("DELETE FROM user_emails WHERE user_id = $1 AND NOT is_primary")
+        .bind(session.user_id)
+        .execute(&mut *tx)
+        .await?;
+    let simple = session.user_id.simple().to_string();
+    sqlx::query("UPDATE users SET username = $2 WHERE id = $1")
+        .bind(session.user_id)
+        .bind(format!("deleted-{}", &simple[simple.len() - 30..]))
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM username_holds WHERE user_id = $1")
+        .bind(session.user_id)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query(
         "DELETE FROM password_credentials WHERE identity_id IN (SELECT id FROM identities WHERE user_id = $1)",
     )

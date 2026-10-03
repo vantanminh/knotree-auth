@@ -12,6 +12,22 @@ function useReturnTo() {
   return safeReturnTo(params.get("return_to"));
 }
 
+function withReturnTo(path: string, returnTo: string | null) {
+  return returnTo ? `${path}?return_to=${encodeURIComponent(returnTo)}` : path;
+}
+
+/** Names the service that sent the user here, for "to continue to …" headings. */
+function useClientName(returnTo: string | null) {
+  const [clientName, setClientName] = useState<string | null>(null);
+  useEffect(() => {
+    if (!returnTo?.startsWith("/oauth/authorize")) return;
+    void api<{ client_name: string | null }>(`/api/v1/oauth/context?return_to=${encodeURIComponent(returnTo)}`)
+      .then((body) => setClientName(body.client_name))
+      .catch(() => setClientName(null));
+  }, [returnTo]);
+  return clientName;
+}
+
 function CheckingSession() {
   return (
     <div className="flex min-h-dvh items-center justify-center">
@@ -86,18 +102,11 @@ export function HomePage() {
 export function SignInPage() {
   const returnTo = useReturnTo();
   const session = useResumeSession(returnTo);
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
-  const [clientName, setClientName] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!returnTo?.startsWith("/oauth/authorize")) return;
-    void api<{ client_name: string | null }>(`/api/v1/oauth/context?return_to=${encodeURIComponent(returnTo)}`)
-      .then((body) => setClientName(body.client_name))
-      .catch(() => setClientName(null));
-  }, [returnTo]);
+  const clientName = useClientName(returnTo);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -106,7 +115,7 @@ export function SignInPage() {
     try {
       const result = await api<LoginResponse>("/api/v1/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ identifier, password }),
       });
       if (result.status === "mfa_required") {
         sessionStorage.setItem("knotree.mfa", JSON.stringify({ ...result, return_to: returnTo }));
@@ -128,7 +137,7 @@ export function SignInPage() {
     <AuthShell
       footer={
         <>
-          {t("New to Knotree?")}{' '}<TextLink to="/sign-up">{t("Create account")}</TextLink>
+          {t("New to Knotree?")}{' '}<TextLink to={withReturnTo("/sign-up", returnTo)}>{t("Create account")}</TextLink>
         </>
       }
     >
@@ -144,15 +153,14 @@ export function SignInPage() {
       <form className="grid gap-4" onSubmit={submit}>
         {error ? <Alert>{error}</Alert> : null}
         <TextField
-          label={t("Email")}
-          name="email"
-          type="email"
+          label={t("Email or username")}
+          name="identifier"
+          type="text"
           autoComplete="username"
-          placeholder={t("you@example.com")}
           required
           autoFocus
-          value={email}
-          onChange={setEmail}
+          value={identifier}
+          onChange={setIdentifier}
         />
         <TextField
           label={t("Password")}
@@ -179,7 +187,10 @@ export function SignInPage() {
 }
 
 export function SignUpPage() {
-  const session = useResumeSession(null);
+  const returnTo = useReturnTo();
+  const session = useResumeSession(returnTo);
+  const clientName = useClientName(returnTo);
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -199,7 +210,7 @@ export function SignUpPage() {
     try {
       await api("/api/v1/auth/register", {
         method: "POST",
-        body: JSON.stringify({ email, password, password_confirm: confirm }),
+        body: JSON.stringify({ username, email, password, password_confirm: confirm, return_to: returnTo }),
       });
       sessionStorage.setItem("knotree.pending-email", email);
       navigate("/verify-email");
@@ -216,13 +227,32 @@ export function SignUpPage() {
     <AuthShell
       footer={
         <>
-          {t("Already have an account?")}{' '}<TextLink to="/sign-in">{t("Sign in")}</TextLink>
+          {t("Already have an account?")}{' '}<TextLink to={withReturnTo("/sign-in", returnTo)}>{t("Sign in")}</TextLink>
         </>
       }
     >
-      <AuthHeading title={t("Create account")}>{t("One Knotree account works across Knotree services.")}</AuthHeading>
+      <AuthHeading title={t("Create account")}>
+        {clientName ? (
+          <>
+            {t("to continue to")}{' '}<span className="font-medium text-ink">{clientName}</span>
+          </>
+        ) : (
+          t("One Knotree account works across Knotree services.")
+        )}
+      </AuthHeading>
       <form className="grid gap-4" onSubmit={submit}>
         {error ? <Alert>{error}</Alert> : null}
+        <TextField
+          label={t("Username")}
+          name="username"
+          autoComplete="username"
+          placeholder={t("ada-lovelace")}
+          hint={t("3–39 letters, numbers or hyphens. You can sign in with it.")}
+          required
+          autoFocus
+          value={username}
+          onChange={setUsername}
+        />
         <TextField
           label={t("Email")}
           name="email"
@@ -230,7 +260,6 @@ export function SignUpPage() {
           autoComplete="email"
           placeholder={t("you@example.com")}
           required
-          autoFocus
           value={email}
           onChange={setEmail}
         />
@@ -261,7 +290,7 @@ export function SignUpPage() {
         </Button>
       </form>
       <Divider>{t("or sign up with")}</Divider>
-      <SocialButtons returnTo={null} />
+      <SocialButtons returnTo={returnTo} />
     </AuthShell>
   );
 }
@@ -288,12 +317,18 @@ export function VerifyEmailPage() {
   const [email, setEmail] = useState(sessionStorage.getItem("knotree.pending-email") ?? "");
   const [pending, setPending] = useState(false);
   const [cooldown, setCooldown] = useCountdown();
+  const [continueTo, setContinueTo] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
     let active = true;
     void verifyEmailOnce(token)
-      .then(() => active && setState("verified"))
+      .then((body) => {
+        if (!active) return;
+        const result = body as { return_to?: string | null } | null;
+        setContinueTo(safeReturnTo(result?.return_to ?? null));
+        setState("verified");
+      })
       .catch((err: unknown) => {
         if (!active) return;
         setState("failed");
@@ -335,7 +370,7 @@ export function VerifyEmailPage() {
         <AuthHeading icon={<CheckCircleIcon size={20} />} title={t("Verify your email")}>
           {t("Email verified. You can sign in.")}
         </AuthHeading>
-        <a href="/sign-in" className={buttonClass("primary", "lg", "w-full")}>
+        <a href={withReturnTo("/sign-in", continueTo)} className={buttonClass("primary", "lg", "w-full")}>
           {t("Continue to sign in")}
         </a>
       </AuthShell>
@@ -405,7 +440,7 @@ export function ForgotPasswordPage() {
     try {
       const body = await api<{ message: string }>("/api/v1/auth/password/forgot", {
         method: "POST",
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ identifier: email }),
       });
       setMessage(t(body.message));
     } catch (err) {
@@ -435,16 +470,14 @@ export function ForgotPasswordPage() {
       ) : (
         <>
           <AuthHeading icon={<KeyIcon size={20} />} title={t("Reset password")}>
-            {t("We’ll email a link if an account exists for this address.")}
+            {t("We’ll email a link to your verified address if the account exists.")}
           </AuthHeading>
           <form className="grid gap-4" onSubmit={submit}>
             {error ? <Alert>{error}</Alert> : null}
             <TextField
-              label={t("Email")}
-              name="email"
-              type="email"
-              autoComplete="email"
-              placeholder={t("you@example.com")}
+              label={t("Email or username")}
+              name="identifier"
+              autoComplete="username"
               required
               autoFocus
               value={email}

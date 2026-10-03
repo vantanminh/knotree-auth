@@ -2,9 +2,7 @@ use super::session::{self, IssueParams, IssuedSession};
 use super::{apply_meta, ClientMeta, NewEvent};
 use crate::email::{self, templates};
 use crate::error::{AppError, AppResult};
-use crate::security::password::{
-    hash_password, mask_email, needs_rehash, normalize_email, verify_password,
-};
+use crate::security::password::{hash_password, mask_email, needs_rehash, verify_password};
 use crate::security::random::{email_otp, random_token};
 use crate::security::rate_limit::{self, Limit};
 use crate::security::sha256;
@@ -23,12 +21,12 @@ pub enum LoginResult {
 
 pub async fn login(
     state: &AppState,
-    email_input: &str,
+    identifier_input: &str,
     password: &str,
     meta: &ClientMeta,
 ) -> AppResult<LoginResult> {
-    let email = normalize_email(email_input).unwrap_or_else(|_| "invalid@invalid.invalid".into());
-    let subject = format!("email:{email}");
+    let identifier = super::identity::LoginIdentifier::parse(identifier_input);
+    let subject = super::identity::LoginIdentifier::rate_subject(identifier_input);
     rate_limit::enforce(
         state,
         &Limit {
@@ -41,17 +39,28 @@ pub async fn login(
     )
     .await?;
 
+    // Any verified email of the account, or its username. Unverified emails
+    // never authenticate.
+    let (email_key, username_key) = match &identifier {
+        Some(super::identity::LoginIdentifier::Email(email)) => (Some(email.as_str()), None),
+        Some(super::identity::LoginIdentifier::Username(name)) => (None, Some(name.as_str())),
+        None => (None, None),
+    };
     let row: Option<(Uuid, String, String, bool)> = sqlx::query_as(
         r#"
         SELECT u.id, u.status, pc.password_hash, u.must_reset_password
         FROM users u
-        JOIN user_emails e ON e.user_id = u.id AND e.is_primary
         JOIN identities i ON i.user_id = u.id AND i.provider = 'password'
         JOIN password_credentials pc ON pc.identity_id = i.id
-        WHERE e.email = $1
+        WHERE ($1::text IS NOT NULL AND EXISTS (
+                SELECT 1 FROM user_emails e
+                WHERE e.user_id = u.id AND e.email = $1 AND e.verified_at IS NOT NULL
+              ))
+           OR ($2::text IS NOT NULL AND u.username = $2)
         "#,
     )
-    .bind(&email)
+    .bind(email_key)
+    .bind(username_key)
     .fetch_optional(&state.db)
     .await?;
 
@@ -125,10 +134,14 @@ pub async fn login(
         .bind(meta.user_agent.as_deref().map(super::truncate_ua))
         .execute(&state.db)
         .await?;
+        let primary = super::primary_email(&state.db, user_id)
+            .await?
+            .map(|(email, _)| email)
+            .unwrap_or_default();
         if methods.iter().any(|method| method == "email")
             && !methods.iter().any(|method| method == "totp")
         {
-            send_email_otp(state, user_id, &email).await?;
+            send_email_otp(state, user_id, &primary).await?;
         }
         let mut event = NewEvent::success("MFA_CHALLENGE_CREATED", user_id);
         event.metadata = serde_json::json!({ "methods": methods });
@@ -137,7 +150,7 @@ pub async fn login(
         return Ok(LoginResult::Mfa {
             token,
             methods,
-            masked_email: mask_email(&email),
+            masked_email: mask_email(&primary),
         });
     }
 

@@ -57,7 +57,23 @@ pub fn api_routes() -> Router<AppState> {
             "/api/v1/me/profile",
             axum::routing::patch(account::update_profile),
         )
-        .route("/api/v1/me/email", post(account::change_email))
+        .route(
+            "/api/v1/me/emails",
+            get(account::emails).post(account::add_email),
+        )
+        .route(
+            "/api/v1/me/emails/{id}",
+            axum::routing::delete(account::remove_email),
+        )
+        .route(
+            "/api/v1/me/emails/{id}/primary",
+            post(account::make_primary_email),
+        )
+        .route("/api/v1/me/emails/{id}/resend", post(account::resend_email))
+        .route(
+            "/api/v1/me/username",
+            axum::routing::patch(account::change_username),
+        )
         .route("/api/v1/me/security", get(account::security))
         .route("/api/v1/me/security-events", get(account::security_events))
         .route("/api/v1/me/sessions", get(account::sessions))

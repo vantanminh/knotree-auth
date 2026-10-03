@@ -49,7 +49,7 @@ import {
 } from "../components/ui";
 import { ApiError, api } from "../lib/api";
 import { eventLabel, formatDate, formatRelative, formatWhen, isMobileDevice, providerLabel } from "../lib/format";
-import type { AuthorizationItem, MfaSummary, SecurityEvent, SessionItem } from "../lib/types";
+import type { AccountEmail, AuthorizationItem, MfaSummary, Profile, SecurityEvent, SessionItem } from "../lib/types";
 
 type Status = { tone: "success" | "error"; text: string } | null;
 
@@ -248,10 +248,8 @@ export function AccountHome() {
 export function ProfilePage() {
   const { profile, error, reload } = useProfile();
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
   const [nameStatus, setNameStatus] = useState<Status>(null);
-  const [emailStatus, setEmailStatus] = useState<Status>(null);
-  const [pending, setPending] = useState<"name" | "email" | null>(null);
+  const [pending, setPending] = useState<"name" | null>(null);
 
   useEffect(() => {
     if (profile) setName(profile.display_name ?? "");
@@ -275,26 +273,11 @@ export function ProfilePage() {
     }
   }
 
-  async function changeEmail(event: React.FormEvent) {
-    event.preventDefault();
-    setPending("email");
-    setEmailStatus(null);
-    try {
-      await api("/api/v1/me/email", { method: "POST", body: JSON.stringify({ email }) });
-      setEmailStatus({ tone: "success", text: t("Check the new address for a verification link.") });
-      setEmail("");
-    } catch (err) {
-      setEmailStatus({ tone: "error", text: errorText(err, "Could not change the email.") });
-    } finally {
-      setPending(null);
-    }
-  }
-
   const nameUnchanged = name.trim() === (profile.display_name ?? "");
 
   return (
     <div className="grid gap-6">
-      <PageTitle title={t("Profile")} detail={t("Name and email for your Knotree account.")} />
+      <PageTitle title={t("Profile")} detail={t("Name, username and emails for your Knotree account.")} />
 
       <Card>
         <form onSubmit={saveName}>
@@ -323,14 +306,150 @@ export function ProfilePage() {
         </form>
       </Card>
 
-      <Card>
-        <form onSubmit={changeEmail}>
-          <CardHeader title={t("Email address")} description={t("Used to sign in and to recover your account.")} />
-          <CardBody className="grid gap-5">
-            <div className="flex flex-wrap items-center gap-3 rounded-[8px] border border-line bg-paper/70 px-3.5 py-3">
+      <UsernameCard profile={profile} reload={reload} />
+
+      <EmailsCard emails={profile.emails} reload={reload} />
+
+      <LanguageCard />
+
+      <DeleteAccount />
+    </div>
+  );
+}
+
+const MAX_EMAILS = 3;
+
+function UsernameCard({ profile, reload }: { profile: Profile; reload: () => Promise<unknown> }) {
+  const [username, setUsername] = useState(profile.username);
+  const [status, setStatus] = useState<Status>(null);
+  const [pending, setPending] = useState(false);
+  const unchanged = username.trim().toLowerCase() === profile.username;
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    setStatus(null);
+    try {
+      await api("/api/v1/me/username", { method: "PATCH", body: JSON.stringify({ username }) });
+      await reload();
+      setStatus({ tone: "success", text: t("Username updated.") });
+    } catch (err) {
+      setStatus({ tone: "error", text: errorText(err, "Could not update your username.") });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Card>
+      <form onSubmit={save}>
+        <CardHeader title={t("Username")} description={t("Sign in with your username or any verified email.")} />
+        <CardBody>
+          <StatusLine status={status} />
+          <TextField
+            label={t("Username")}
+            name="username"
+            autoComplete="username"
+            value={username}
+            onChange={setUsername}
+            required
+          />
+        </CardBody>
+        <CardFooter note={t("Requires a recent sign-in. You can change it once every 30 days.")}>
+          <Button type="submit" pending={pending} disabled={unchanged || !username.trim()}>
+            {pending ? t("Saving…") : t("Save username")}
+          </Button>
+        </CardFooter>
+      </form>
+    </Card>
+  );
+}
+
+function EmailsCard({ emails, reload }: { emails: AccountEmail[]; reload: () => Promise<unknown> }) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<Status>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const full = emails.length >= MAX_EMAILS;
+
+  async function run(key: string, action: () => Promise<void>, fallback: string) {
+    setPending(key);
+    setStatus(null);
+    try {
+      await action();
+    } catch (err) {
+      setStatus({ tone: "error", text: errorText(err, fallback) });
+    } finally {
+      setPending(null);
+    }
+  }
+
+  function add(event: React.FormEvent) {
+    event.preventDefault();
+    void run(
+      "add",
+      async () => {
+        await api("/api/v1/me/emails", { method: "POST", body: JSON.stringify({ email }) });
+        setEmail("");
+        await reload();
+        setStatus({ tone: "success", text: t("Check the new address for a confirmation link.") });
+      },
+      "Could not add the email.",
+    );
+  }
+
+  function makePrimary(item: AccountEmail) {
+    void run(
+      `primary-${item.id}`,
+      async () => {
+        await api(`/api/v1/me/emails/${item.id}/primary`, { method: "POST", body: "{}" });
+        await reload();
+        setStatus({ tone: "success", text: t("Primary email updated.") });
+      },
+      "Could not change the primary email.",
+    );
+  }
+
+  function resend(item: AccountEmail) {
+    void run(
+      `resend-${item.id}`,
+      async () => {
+        await api(`/api/v1/me/emails/${item.id}/resend`, { method: "POST", body: "{}" });
+        setStatus({ tone: "success", text: t("Check the new address for a confirmation link.") });
+      },
+      "Could not resend the email.",
+    );
+  }
+
+  function remove(item: AccountEmail) {
+    void run(
+      `remove-${item.id}`,
+      async () => {
+        await api(`/api/v1/me/emails/${item.id}`, { method: "DELETE" });
+        await reload();
+        setStatus({ tone: "success", text: t("Email removed.") });
+      },
+      "Could not remove the email.",
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title={t("Email addresses")}
+        description={t("Up to three. Any verified email can sign in; the primary one receives security alerts.")}
+      />
+      <CardBody className="grid gap-3">
+        <StatusLine status={status} />
+        <ul className="grid gap-2" aria-label={t("Email addresses")}>
+          {emails.map((item) => (
+            <li
+              key={item.id}
+              className="flex flex-wrap items-center gap-3 rounded-[8px] border border-line bg-paper/70 px-3.5 py-3"
+            >
               <MailIcon className="text-faint" />
-              <span className="min-w-0 flex-1 truncate text-sm text-ink">{profile.email}</span>
-              {profile.email_verified ? (
+              <span className="min-w-0 flex-1 truncate text-sm text-ink">{item.email}</span>
+              {item.primary ? <Badge>{t("Primary")}</Badge> : null}
+              {item.verified ? (
                 <Badge tone="success" dot>
                   {t("Verified")}
                 </Badge>
@@ -339,32 +458,56 @@ export function ProfilePage() {
                   {t("Unverified")}
                 </Badge>
               )}
-            </div>
+              {!item.primary && item.verified ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  pending={pending === `primary-${item.id}`}
+                  onClick={() => makePrimary(item)}
+                >
+                  {t("Make primary")}
+                </Button>
+              ) : null}
+              {!item.primary && !item.verified ? (
+                <Button size="sm" variant="ghost" pending={pending === `resend-${item.id}`} onClick={() => resend(item)}>
+                  {t("Resend")}
+                </Button>
+              ) : null}
+              {!item.primary ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={t("Remove {email}", { email: item.email })}
+                  pending={pending === `remove-${item.id}`}
+                  onClick={() => remove(item)}
+                >
+                  <TrashIcon />
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+        {full ? null : (
+          <form className="grid gap-3" onSubmit={add}>
+            <TextField
+              label={t("Add email")}
+              name="email"
+              type="email"
+              autoComplete="email"
+              placeholder={t("new@example.com")}
+              value={email}
+              onChange={setEmail}
+            />
             <div>
-              <StatusLine status={emailStatus} />
-              <TextField
-                label={t("New email")}
-                name="email"
-                type="email"
-                autoComplete="email"
-                placeholder={t("new@example.com")}
-                value={email}
-                onChange={setEmail}
-              />
+              <Button type="submit" variant="secondary" pending={pending === "add"} disabled={!email}>
+                {pending === "add" ? t("Sending…") : t("Add email")}
+              </Button>
             </div>
-          </CardBody>
-          <CardFooter note={t("Requires a recent sign-in. We’ll send a link to the new address.")}>
-            <Button type="submit" variant="secondary" pending={pending === "email"} disabled={!email}>
-              {pending === "email" ? t("Sending…") : t("Send verification")}
-            </Button>
-          </CardFooter>
-        </form>
-      </Card>
-
-      <LanguageCard />
-
-      <DeleteAccount />
-    </div>
+          </form>
+        )}
+      </CardBody>
+      <CardFooter note={t("Changes need a recent sign-in. Your primary email is alerted about every change.")} />
+    </Card>
   );
 }
 

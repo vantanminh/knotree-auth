@@ -99,6 +99,39 @@ pub fn verification(locale: Locale, link: &str) -> RenderedEmail {
     finish(locale, "verify-email", title, &html_body, &text)
 }
 
+pub fn added_email_verification(locale: Locale, link: &str) -> RenderedEmail {
+    let (title, intro, cta, expiry) = match locale {
+        Locale::En => (
+            "Confirm your new email",
+            "Confirm this address to add it to your Knotree account. Once confirmed, you can sign in with it.",
+            "Confirm email",
+            "This link can be used once. If you did not add this address, you can ignore this email.",
+        ),
+        Locale::Vi => (
+            "Xác nhận email mới",
+            "Xác nhận địa chỉ này để thêm vào tài khoản Knotree. Sau khi xác nhận, bạn có thể đăng nhập bằng email này.",
+            "Xác nhận email",
+            "Liên kết chỉ dùng được một lần. Nếu bạn không thêm địa chỉ này, hãy bỏ qua email này.",
+        ),
+    };
+    let text = format!(
+        "{intro}
+
+{link}
+
+{expiry}"
+    );
+    let html_body = format!(
+        "<p>{}</p>
+{}
+{}",
+        esc(intro),
+        button(link, cta),
+        note(expiry)
+    );
+    finish(locale, "verify-added-email", title, &html_body, &text)
+}
+
 pub fn mfa_code(locale: Locale, code: &str, minutes: i64) -> RenderedEmail {
     let (title, text, intro, footer) = match locale {
         Locale::En => (
@@ -224,6 +257,9 @@ pub fn new_login(
 #[derive(Clone, Copy, Debug)]
 pub enum SecurityAlert {
     EmailChanged,
+    EmailAdded,
+    EmailRemoved,
+    UsernameChanged,
     AuthenticatorEnabled,
     AuthenticatorDisabled,
     EmailCodesEnabled,
@@ -239,6 +275,12 @@ impl SecurityAlert {
         match (self, locale) {
             (EmailChanged, Locale::En) => "The email address on your Knotree account was changed.",
             (EmailChanged, Locale::Vi) => "Địa chỉ email của tài khoản Knotree của bạn đã được thay đổi.",
+            (EmailAdded, Locale::En) => "A new email address was verified and added to your Knotree account. It can now be used to sign in.",
+            (EmailAdded, Locale::Vi) => "Một địa chỉ email mới đã được xác minh và thêm vào tài khoản Knotree của bạn. Email này giờ có thể dùng để đăng nhập.",
+            (EmailRemoved, Locale::En) => "An email address was removed from your Knotree account.",
+            (EmailRemoved, Locale::Vi) => "Một địa chỉ email đã bị gỡ khỏi tài khoản Knotree của bạn.",
+            (UsernameChanged, Locale::En) => "The username of your Knotree account was changed.",
+            (UsernameChanged, Locale::Vi) => "Tên người dùng của tài khoản Knotree của bạn đã được thay đổi.",
             (AuthenticatorEnabled, Locale::En) => "An authenticator app is now enabled on your Knotree account.",
             (AuthenticatorEnabled, Locale::Vi) => "Ứng dụng xác thực đã được bật cho tài khoản Knotree của bạn.",
             (AuthenticatorDisabled, Locale::En) => "The authenticator app was turned off on your Knotree account.",

@@ -3,9 +3,7 @@ use super::session::{self, CurrentSession};
 use super::{apply_meta, primary_email, ClientMeta, NewEvent};
 use crate::email::{self, templates};
 use crate::error::{AppError, AppResult};
-use crate::security::password::{
-    hash_password, normalize_email, validate_password, verify_password,
-};
+use crate::security::password::{hash_password, validate_password, verify_password};
 use crate::security::random::random_token;
 use crate::security::rate_limit::{self, Limit};
 use crate::security::sha256;
@@ -15,42 +13,46 @@ use uuid::Uuid;
 
 pub async fn request_reset(
     state: &AppState,
-    email_input: &str,
+    identifier_input: &str,
     meta: &ClientMeta,
 ) -> AppResult<()> {
-    let email = normalize_email(email_input).unwrap_or_else(|_| "invalid@invalid.invalid".into());
+    let subject = super::identity::LoginIdentifier::rate_subject(identifier_input);
     rate_limit::enforce(
         state,
         &Limit {
             kind: "password_reset",
-            subject: format!("email:{email}"),
+            subject: subject.clone(),
             limit: 5,
             window_seconds: 3600,
         },
         meta.ip,
     )
     .await?;
-    rate_limit::record(
-        state,
-        "password_reset",
-        &format!("email:{email}"),
-        meta.ip,
-        false,
-    )
-    .await?;
-    let row: Option<Uuid> = sqlx::query_scalar(
+    rate_limit::record(state, "password_reset", &subject, meta.ip, false).await?;
+    // A verified email receives the link itself; a username sends it to the
+    // account's verified primary email.
+    let (email_key, username_key) = match super::identity::LoginIdentifier::parse(identifier_input)
+    {
+        Some(super::identity::LoginIdentifier::Email(email)) => (Some(email), None),
+        Some(super::identity::LoginIdentifier::Username(name)) => (None, Some(name)),
+        None => return Ok(()),
+    };
+    let row: Option<(Uuid, String)> = sqlx::query_as(
         r#"
-        SELECT u.id
+        SELECT u.id, e.email
         FROM users u
-        JOIN user_emails e ON e.user_id = u.id AND e.is_primary
+        JOIN user_emails e ON e.user_id = u.id AND e.verified_at IS NOT NULL
         JOIN identities i ON i.user_id = u.id AND i.provider = 'password'
-        WHERE e.email = $1 AND u.status = 'active'
+        WHERE u.status = 'active'
+          AND (($1::text IS NOT NULL AND e.email = $1)
+               OR ($2::text IS NOT NULL AND u.username = $2 AND e.is_primary))
         "#,
     )
-    .bind(&email)
+    .bind(email_key)
+    .bind(username_key)
     .fetch_optional(&state.db)
     .await?;
-    let Some(user_id) = row else {
+    let Some((user_id, email)) = row else {
         return Ok(());
     };
     let token = random_token()?;
