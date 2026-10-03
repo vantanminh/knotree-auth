@@ -12,6 +12,22 @@ function useReturnTo() {
   return safeReturnTo(params.get("return_to"));
 }
 
+function withReturnTo(path: string, returnTo: string | null) {
+  return returnTo ? `${path}?return_to=${encodeURIComponent(returnTo)}` : path;
+}
+
+/** Names the service that sent the user here, for "to continue to …" headings. */
+function useClientName(returnTo: string | null) {
+  const [clientName, setClientName] = useState<string | null>(null);
+  useEffect(() => {
+    if (!returnTo?.startsWith("/oauth/authorize")) return;
+    void api<{ client_name: string | null }>(`/api/v1/oauth/context?return_to=${encodeURIComponent(returnTo)}`)
+      .then((body) => setClientName(body.client_name))
+      .catch(() => setClientName(null));
+  }, [returnTo]);
+  return clientName;
+}
+
 function CheckingSession() {
   return (
     <div className="flex min-h-dvh items-center justify-center">
@@ -90,14 +106,7 @@ export function SignInPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
-  const [clientName, setClientName] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!returnTo?.startsWith("/oauth/authorize")) return;
-    void api<{ client_name: string | null }>(`/api/v1/oauth/context?return_to=${encodeURIComponent(returnTo)}`)
-      .then((body) => setClientName(body.client_name))
-      .catch(() => setClientName(null));
-  }, [returnTo]);
+  const clientName = useClientName(returnTo);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -128,7 +137,7 @@ export function SignInPage() {
     <AuthShell
       footer={
         <>
-          {t("New to Knotree?")}{' '}<TextLink to="/sign-up">{t("Create account")}</TextLink>
+          {t("New to Knotree?")}{' '}<TextLink to={withReturnTo("/sign-up", returnTo)}>{t("Create account")}</TextLink>
         </>
       }
     >
@@ -179,7 +188,9 @@ export function SignInPage() {
 }
 
 export function SignUpPage() {
-  const session = useResumeSession(null);
+  const returnTo = useReturnTo();
+  const session = useResumeSession(returnTo);
+  const clientName = useClientName(returnTo);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -199,7 +210,7 @@ export function SignUpPage() {
     try {
       await api("/api/v1/auth/register", {
         method: "POST",
-        body: JSON.stringify({ email, password, password_confirm: confirm }),
+        body: JSON.stringify({ email, password, password_confirm: confirm, return_to: returnTo }),
       });
       sessionStorage.setItem("knotree.pending-email", email);
       navigate("/verify-email");
@@ -216,11 +227,19 @@ export function SignUpPage() {
     <AuthShell
       footer={
         <>
-          {t("Already have an account?")}{' '}<TextLink to="/sign-in">{t("Sign in")}</TextLink>
+          {t("Already have an account?")}{' '}<TextLink to={withReturnTo("/sign-in", returnTo)}>{t("Sign in")}</TextLink>
         </>
       }
     >
-      <AuthHeading title={t("Create account")}>{t("One Knotree account works across Knotree services.")}</AuthHeading>
+      <AuthHeading title={t("Create account")}>
+        {clientName ? (
+          <>
+            {t("to continue to")}{' '}<span className="font-medium text-ink">{clientName}</span>
+          </>
+        ) : (
+          t("One Knotree account works across Knotree services.")
+        )}
+      </AuthHeading>
       <form className="grid gap-4" onSubmit={submit}>
         {error ? <Alert>{error}</Alert> : null}
         <TextField
@@ -261,7 +280,7 @@ export function SignUpPage() {
         </Button>
       </form>
       <Divider>{t("or sign up with")}</Divider>
-      <SocialButtons returnTo={null} />
+      <SocialButtons returnTo={returnTo} />
     </AuthShell>
   );
 }
@@ -288,12 +307,18 @@ export function VerifyEmailPage() {
   const [email, setEmail] = useState(sessionStorage.getItem("knotree.pending-email") ?? "");
   const [pending, setPending] = useState(false);
   const [cooldown, setCooldown] = useCountdown();
+  const [continueTo, setContinueTo] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
     let active = true;
     void verifyEmailOnce(token)
-      .then(() => active && setState("verified"))
+      .then((body) => {
+        if (!active) return;
+        const result = body as { return_to?: string | null } | null;
+        setContinueTo(safeReturnTo(result?.return_to ?? null));
+        setState("verified");
+      })
       .catch((err: unknown) => {
         if (!active) return;
         setState("failed");
@@ -335,7 +360,7 @@ export function VerifyEmailPage() {
         <AuthHeading icon={<CheckCircleIcon size={20} />} title={t("Verify your email")}>
           {t("Email verified. You can sign in.")}
         </AuthHeading>
-        <a href="/sign-in" className={buttonClass("primary", "lg", "w-full")}>
+        <a href={withReturnTo("/sign-in", continueTo)} className={buttonClass("primary", "lg", "w-full")}>
           {t("Continue to sign in")}
         </a>
       </AuthShell>

@@ -18,9 +18,7 @@ struct Api {
     http: Client,
 }
 
-#[tokio::test]
-async fn identity_platform_flows() {
-    let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().await;
+async fn setup() -> (knotree_accounts::AppState, Api) {
     let db_url = std::env::var("TEST_DATABASE_URL")
         .unwrap_or_else(|_| "postgres://knotree:knotree@127.0.0.1/knotree_accounts_test".into());
     let config = for_tests(&db_url).expect("test config");
@@ -67,6 +65,13 @@ async fn identity_platform_flows() {
             .build()
             .unwrap(),
     };
+    (state, api)
+}
+
+#[tokio::test]
+async fn identity_platform_flows() {
+    let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let (state, api) = setup().await;
 
     let email = format!("ada-{}@example.com", uuid_suffix());
     let password = "correct horse battery";
@@ -547,6 +552,63 @@ async fn identity_platform_flows() {
         .any(
             |item| item["event_type"] == "USER_REGISTERED" || item["event_type"] == "LOGIN_SUCCESS"
         ));
+}
+
+#[tokio::test]
+async fn sign_up_hint_and_return_to_survive_email_verification() {
+    let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let (_state, api) = setup().await;
+    let authorize = format!(
+        "/oauth/authorize?client_id=knotree-study&redirect_uri={}&response_type=code&scope=openid&state=state-value-1&code_challenge={}&code_challenge_method=S256",
+        url_encode("https://study.knotree.com/auth/callback"),
+        "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+    );
+
+    let sign_in = api.get_response(&authorize).await;
+    assert_eq!(sign_in.status(), StatusCode::TEMPORARY_REDIRECT);
+    let location = sign_in.headers()[LOCATION].to_str().unwrap().to_owned();
+    assert!(location.starts_with("/sign-in?return_to="), "{location}");
+
+    let sign_up = api
+        .get_response(&format!("{authorize}&screen_hint=signup"))
+        .await;
+    assert_eq!(sign_up.status(), StatusCode::TEMPORARY_REDIRECT);
+    let location = sign_up.headers()[LOCATION].to_str().unwrap().to_owned();
+    assert!(location.starts_with("/sign-up?return_to="), "{location}");
+    let return_to = query_param(&location, "return_to").unwrap();
+    assert!(return_to.starts_with("/oauth/authorize?"), "{return_to}");
+    assert!(!return_to.contains("screen_hint"), "{return_to}");
+
+    let email = format!("grace-{}@example.com", uuid_suffix());
+    let password = "correct horse battery";
+    api.csrf().await;
+    let created = api
+        .post(
+            "/api/v1/auth/register",
+            json!({"email": email, "password": password, "password_confirm": password, "return_to": return_to}),
+        )
+        .await;
+    assert_eq!(created.status(), StatusCode::OK, "{}", created.text);
+    let token = api.mailbox_token(&email, "verify-email").await;
+    let verified = api
+        .post("/api/v1/auth/email/verify", json!({"token": token}))
+        .await;
+    assert_eq!(verified.status(), StatusCode::OK, "{}", verified.text);
+    assert_eq!(verified.json["return_to"], return_to);
+
+    let other = format!("hopper-{}@example.com", uuid_suffix());
+    let created = api
+        .post(
+            "/api/v1/auth/register",
+            json!({"email": other, "password": password, "password_confirm": password, "return_to": "https://evil.example/"}),
+        )
+        .await;
+    assert_eq!(created.status(), StatusCode::OK, "{}", created.text);
+    let token = api.mailbox_token(&other, "verify-email").await;
+    let verified = api
+        .post("/api/v1/auth/email/verify", json!({"token": token}))
+        .await;
+    assert_eq!(verified.json["return_to"], Value::Null);
 }
 
 #[tokio::test]

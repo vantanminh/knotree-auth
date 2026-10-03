@@ -14,6 +14,7 @@ pub struct RegisterBody {
     email: String,
     password: String,
     password_confirm: String,
+    return_to: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -84,6 +85,7 @@ pub async fn register(
             email: body.email,
             password: body.password,
             password_confirm: body.password_confirm,
+            return_to: body.return_to,
         },
         &meta,
     )
@@ -215,7 +217,7 @@ pub async fn verify_email(
     Json(body): Json<TokenBody>,
 ) -> Result<Json<Value>, AppError> {
     match auth::verify_email(&state, &body.token, &meta).await {
-        Ok(()) => Ok(Json(json!({"status": "verified"}))),
+        Ok(return_to) => Ok(Json(json!({"status": "verified", "return_to": return_to}))),
         Err(AppError::Gone(_)) => {
             auth::confirm_email_change(&state, &body.token, &meta).await?;
             Ok(Json(json!({"status": "email_changed"})))

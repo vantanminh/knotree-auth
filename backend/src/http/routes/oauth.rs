@@ -20,6 +20,9 @@ pub struct AuthorizeQuery {
     code_challenge: String,
     code_challenge_method: String,
     nonce: Option<String>,
+    /// `signup` sends a visitor without a session to account creation instead
+    /// of sign-in, so relying services can offer a "Sign up" button.
+    screen_hint: Option<String>,
 }
 
 pub async fn authorize(
@@ -59,8 +62,13 @@ pub async fn authorize(
         None
     };
     let Some(loaded) = loaded else {
+        let entry = if query.screen_hint.as_deref() == Some("signup") {
+            "/sign-up"
+        } else {
+            "/sign-in"
+        };
         let target = format!(
-            "/sign-in?return_to={}",
+            "{entry}?return_to={}",
             urlencoding_query(&format!(
                 "/oauth/authorize?{}",
                 build_authorize_query(&query)

@@ -19,6 +19,11 @@ https://accounts.knotree.com/oauth/authorize
   &nonce=...
 ```
 
+   For a Sign up button, send the same request with `&screen_hint=signup`.
+   A visitor without a session lands on account creation instead of sign-in.
+   The request is kept through email verification, so the new user returns
+   to the service after confirming their address.
+
 5. On the callback, reject a missing or mismatched `state`.
 6. `POST https://accounts.knotree.com/oauth/token` with `grant_type=authorization_code`, the code, the same `redirect_uri`, `client_id`, and `code_verifier`.
 7. Verify the ID token against `/.well-known/jwks.json`: RS256, `iss` is `https://accounts.knotree.com`, `aud` contains the client id, `exp` is in the future, and `nonce` matches.
