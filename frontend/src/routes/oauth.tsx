@@ -71,7 +71,7 @@ export function ConsentPage() {
         {t("This application is asking to use your Knotree account. Continue only if you recognize it.")}
       </AuthHeading>
       {context ? (
-        <div className="mb-5 grid gap-3 motion-safe:animate-[fade-in_200ms_ease-out]">
+        <div className="mb-5 grid gap-3 animate-fade-in">
           {context.description ? <p className="text-[14px] leading-relaxed text-ink-soft">{context.description}</p> : null}
           {context.homepage_url ? (
             <a className="w-fit text-[13px] font-medium text-pine hover:underline" href={context.homepage_url} target="_blank" rel="noopener noreferrer">

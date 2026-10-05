@@ -12,6 +12,7 @@ import {
 } from "./routes/account";
 import { AdminAnalytics, AdminClient, AdminClients, AdminLogs, AdminOverview, AdminSecurity, AdminUser, AdminUsers } from "./routes/admin";
 import { AdminClientNew } from "./routes/admin-services";
+import { TopProgress } from "./components/ui";
 import { ForgotPasswordPage, HomePage, ResetPasswordPage, SignInPage, SignUpPage, VerifyEmailPage } from "./routes/auth";
 import { MfaPage } from "./routes/mfa";
 import { ConsentPage, OAuthErrorPage } from "./routes/oauth";
@@ -63,7 +64,12 @@ const router = createBrowserRouter([
 // Remount on language change so every screen re-renders in the new language.
 function App() {
   const locale = useLocale();
-  return <RouterProvider key={locale} router={router} />;
+  return (
+    <>
+      <TopProgress />
+      <RouterProvider key={locale} router={router} />
+    </>
+  );
 }
 
 createRoot(document.getElementById("root")!).render(
