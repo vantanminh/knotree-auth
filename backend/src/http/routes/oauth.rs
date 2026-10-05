@@ -3,7 +3,7 @@ use crate::error::AppError;
 use crate::http::extract::{AuthSession, Csrf, Meta};
 use crate::oauth::{self, AuthorizeInput, CodeExchange, OAuthFailure};
 use crate::state::AppState;
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::{Form, Json};
@@ -188,6 +188,44 @@ pub async fn consent(
             urlencoding_query(&code),
             urlencoding_query(&valid.state)
         )
+    })))
+}
+
+/// The service and scopes behind a pending consent request, shown on the
+/// consent screen like "Sign in with Google".
+pub async fn consent_request(
+    State(state): State<AppState>,
+    _auth: AuthSession,
+    Path(id): Path<uuid::Uuid>,
+) -> Result<Json<Value>, AppError> {
+    let row: Option<(
+        String,
+        Vec<String>,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> = sqlx::query_as(
+        r#"
+        SELECT c.id, r.scopes, c.name, c.description, c.homepage_url, c.logo_path
+        FROM oauth_consent_requests r
+        JOIN oauth_clients c ON c.id = r.client_id
+        WHERE r.id = $1 AND r.expires_at > now() AND c.status = 'active'
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some((client_id, scopes, name, description, homepage_url, logo_path)) = row else {
+        return Err(AppError::Gone("This authorization request expired."));
+    };
+    Ok(Json(json!({
+        "client_id": client_id,
+        "client_name": name,
+        "description": description,
+        "homepage_url": homepage_url,
+        "logo_url": crate::admin::clients::logo_url(logo_path.as_deref()),
+        "scopes": scopes,
     })))
 }
 

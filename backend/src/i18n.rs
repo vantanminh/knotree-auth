@@ -168,6 +168,22 @@ const VI: &[(&str, &str)] = &[
     ("Verify your email before using email codes.", "Hãy xác minh email trước khi dùng mã qua email."),
     ("You cannot disable your own admin account.", "Bạn không thể vô hiệu hoá tài khoản quản trị của chính mình."),
     ("Choose a supported language.", "Hãy chọn ngôn ngữ được hỗ trợ."),
+    ("Service IDs are 3 to 64 lowercase letters, numbers or hyphens.", "Mã dịch vụ dài 3 đến 64 ký tự gồm chữ thường, số hoặc dấu gạch ngang."),
+    ("Enter a service name up to 80 characters.", "Nhập tên dịch vụ tối đa 80 ký tự."),
+    ("Keep the description under 1000 characters.", "Mô tả không quá 1000 ký tự."),
+    ("Enter a valid homepage URL.", "Nhập URL trang chủ hợp lệ."),
+    ("Each redirect URI must be an absolute URL.", "Mỗi redirect URI phải là URL đầy đủ."),
+    ("Redirect URIs must use HTTPS (HTTP only for localhost) and have no fragment.", "Redirect URI phải dùng HTTPS (HTTP chỉ cho localhost) và không có phần #."),
+    ("Use at most 20 redirect URIs.", "Dùng tối đa 20 redirect URI."),
+    ("Scopes use letters, numbers and _ : . - only.", "Phạm vi chỉ gồm chữ, số và _ : . -"),
+    ("Choose a valid service type.", "Hãy chọn loại dịch vụ hợp lệ."),
+    ("Add at least one redirect URI.", "Hãy thêm ít nhất một redirect URI."),
+    ("A service with this ID already exists.", "Đã có dịch vụ dùng mã này."),
+    ("Public services do not use a secret.", "Dịch vụ công khai không dùng secret."),
+    ("The logo must be 1 MB or smaller.", "Logo phải nhỏ hơn hoặc bằng 1 MB."),
+    ("Upload a PNG, JPEG or WebP image.", "Hãy tải lên ảnh PNG, JPEG hoặc WebP."),
+    ("The logo must be at least 64×64 pixels.", "Logo phải có kích thước tối thiểu 64×64 pixel."),
+    ("The logo must be a square image.", "Logo phải là ảnh vuông."),
 ];
 
 #[cfg(test)]

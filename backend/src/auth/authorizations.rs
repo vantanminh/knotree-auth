@@ -9,7 +9,7 @@ pub async fn list_authorizations(
     state: &AppState,
     user_id: Uuid,
 ) -> AppResult<Vec<serde_json::Value>> {
-    let rows: Vec<(String, String, bool, String, Vec<String>, DateTime<Utc>, Option<DateTime<Utc>>, i64)> = sqlx::query_as(
+    let rows: Vec<(String, String, bool, String, Vec<String>, DateTime<Utc>, Option<DateTime<Utc>>, i64, Option<String>, Option<String>)> = sqlx::query_as(
         r#"
         SELECT c.id, c.name, c.first_party, c.status, oc.scopes, oc.granted_at,
                GREATEST(
@@ -18,7 +18,8 @@ pub async fn list_authorizations(
                ) AS last_used_at,
                (SELECT count(*) FROM refresh_tokens r
                 WHERE r.user_id = oc.user_id AND r.client_id = oc.client_id
-                  AND r.revoked_at IS NULL AND r.used_at IS NULL AND r.expires_at > now()) AS active_grants
+                  AND r.revoked_at IS NULL AND r.used_at IS NULL AND r.expires_at > now()) AS active_grants,
+               c.description, c.logo_path
         FROM oauth_consents oc
         JOIN oauth_clients c ON c.id = oc.client_id
         WHERE oc.user_id = $1
@@ -40,6 +41,8 @@ pub async fn list_authorizations(
                 "granted_at": row.5,
                 "last_used_at": row.6,
                 "active_grants": row.7,
+                "description": row.8,
+                "logo_url": crate::admin::clients::logo_url(row.9.as_deref()),
             })
         })
         .collect())

@@ -544,6 +544,77 @@ async fn identity_platform_flows() {
     assert_eq!(detail.json["recent_consents"], json!([]));
     let missing = api.get("/api/v1/admin/clients/no-such-client").await;
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
+
+    // Third-party services created by the super admin go through consent.
+    let created = api
+        .post(
+            "/api/v1/admin/clients",
+            json!({
+                "id": "partner-app",
+                "name": "Partner App",
+                "description": "Ứng dụng đối tác",
+                "client_type": "confidential",
+                "redirect_uris": ["https://partner.example.com/callback"],
+                "allowed_scopes": ["profile", "email"],
+            }),
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::OK, "{}", created.text);
+    assert_eq!(created.json["first_party"], false);
+    assert!(created.json["client_secret"].as_str().unwrap().len() > 20);
+    assert_eq!(created.json["allowed_scopes"][0], "openid");
+    let duplicate = api
+        .post(
+            "/api/v1/admin/clients",
+            json!({"id": "partner-app", "name": "x", "redirect_uris": ["https://x.example.com/cb"]}),
+        )
+        .await;
+    assert_eq!(duplicate.status, StatusCode::CONFLICT);
+    let edited = api
+        .post_method_patch(
+            "/api/v1/admin/clients/partner-app",
+            json!({"description": "Đối tác của Knotree", "homepage_url": "https://partner.example.com"}),
+        )
+        .await;
+    assert_eq!(edited.status, StatusCode::OK, "{}", edited.text);
+    assert_eq!(edited.json["description"], "Đối tác của Knotree");
+    assert_eq!(edited.json["name"], "Partner App");
+    let rotated = api
+        .post("/api/v1/admin/clients/partner-app/secret", json!({}))
+        .await;
+    assert_eq!(rotated.status, StatusCode::OK, "{}", rotated.text);
+    assert_ne!(rotated.json["client_secret"], created.json["client_secret"]);
+
+    let upload = |bytes: Vec<u8>| {
+        let form = reqwest::multipart::Form::new().part(
+            "logo",
+            reqwest::multipart::Part::bytes(bytes).file_name("logo.png"),
+        );
+        api.send(
+            api.http
+                .put(format!(
+                    "{}/api/v1/admin/clients/partner-app/logo",
+                    api.base
+                ))
+                .multipart(form),
+        )
+    };
+    let wide = upload(test_png(200, 100)).await;
+    assert_eq!(wide.status, StatusCode::BAD_REQUEST, "{}", wide.text);
+    let logo = upload(test_png(600, 600)).await;
+    assert_eq!(logo.status, StatusCode::OK, "{}", logo.text);
+    let logo_url = logo.json["logo_url"].as_str().unwrap().to_string();
+    let served = api.get_response(&logo_url).await;
+    assert_eq!(served.status(), StatusCode::OK);
+    assert_eq!(served.headers()["content-type"], "image/png");
+    assert_eq!(
+        api.get_status("/api/v1/client-logos/..%2F..%2FCargo.toml")
+            .await,
+        StatusCode::NOT_FOUND
+    );
+    let removed = api.delete("/api/v1/admin/clients/partner-app/logo").await;
+    assert_eq!(removed.status, StatusCode::OK, "{}", removed.text);
+    assert_eq!(api.get_status(&logo_url).await, StatusCode::NOT_FOUND);
     let users = api.get("/api/v1/admin/users?q=ada").await;
     assert_eq!(users.status, StatusCode::OK);
     let logs = api.get("/api/v1/admin/security-events").await;
@@ -893,6 +964,14 @@ async fn super_admin_is_seeded_from_email_and_password() {
         )
         .await;
     assert_eq!(login.status(), StatusCode::OK, "{}", login.text);
+}
+
+fn test_png(width: u32, height: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    image::DynamicImage::ImageRgba8(image::RgbaImage::new(width, height))
+        .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+        .unwrap();
+    out
 }
 
 struct Response {

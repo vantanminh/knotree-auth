@@ -11,6 +11,14 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::json;
 
+/// Routes that accept bodies larger than the default 64 KiB limit.
+pub fn upload_routes() -> Router<AppState> {
+    Router::new().route(
+        "/api/v1/admin/clients/{id}/logo",
+        axum::routing::put(admin::upload_client_logo).delete(admin::delete_client_logo),
+    )
+}
+
 pub fn public_routes() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
@@ -52,6 +60,7 @@ pub fn api_routes() -> Router<AppState> {
         )
         .route("/api/v1/oauth/context", get(oauth::context))
         .route("/api/v1/oauth/consent", post(oauth::consent))
+        .route("/api/v1/oauth/consent/{id}", get(oauth::consent_request))
         .route("/api/v1/me", get(account::me))
         .route(
             "/api/v1/me/profile",
@@ -120,8 +129,19 @@ pub fn api_routes() -> Router<AppState> {
             "/api/v1/admin/users/{id}/force-password-reset",
             post(admin::force_reset),
         )
-        .route("/api/v1/admin/clients", get(admin::clients))
-        .route("/api/v1/admin/clients/{id}", get(admin::client))
+        .route(
+            "/api/v1/admin/clients",
+            get(admin::clients).post(admin::create_client),
+        )
+        .route(
+            "/api/v1/admin/clients/{id}",
+            get(admin::client).patch(admin::update_client),
+        )
+        .route(
+            "/api/v1/admin/clients/{id}/secret",
+            post(admin::rotate_client_secret),
+        )
+        .route("/api/v1/client-logos/{file}", get(admin::client_logo))
         .route("/api/v1/admin/security-events", get(admin::security_events))
         .route("/api/v1/admin/logs", get(admin::logs))
         .route("/api/v1/dev/mailbox", get(auth::dev_mailbox))
