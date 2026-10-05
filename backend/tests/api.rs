@@ -852,6 +852,49 @@ async fn configured_super_admin_must_be_verified_before_existing_admin_is_replac
     assert_eq!(admins, vec![verified_id]);
 }
 
+#[tokio::test]
+async fn super_admin_is_seeded_from_email_and_password() {
+    let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let (_state, api) = setup().await;
+    let db_url = std::env::var("TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://knotree:knotree@127.0.0.1/knotree_accounts_test".into());
+    let email = format!("root-{}@example.com", uuid_suffix());
+
+    let mut weak = for_tests(&db_url).expect("test config");
+    weak.super_admin_email = Some(email.clone());
+    weak.super_admin_password = Some("short".into());
+    let weak_state = connect(weak).await.expect("database");
+    assert!(knotree_accounts::auth::bootstrap_admin(&weak_state)
+        .await
+        .is_err());
+
+    let mut config = for_tests(&db_url).expect("test config");
+    config.super_admin_email = Some(email.clone());
+    config.super_admin_password = Some("seeded admin passphrase".into());
+    let state = connect(config).await.expect("database");
+    knotree_accounts::auth::bootstrap_admin(&state)
+        .await
+        .expect("super admin seeded");
+    knotree_accounts::auth::bootstrap_admin(&state)
+        .await
+        .expect("seeding is idempotent");
+    let admins: Vec<uuid::Uuid> =
+        sqlx::query_scalar("SELECT user_id FROM role_assignments WHERE role = 'super_admin'")
+            .fetch_all(&state.db)
+            .await
+            .unwrap();
+    assert_eq!(admins.len(), 1);
+
+    api.csrf().await;
+    let login = api
+        .post(
+            "/api/v1/auth/login",
+            json!({"email": email, "password": "seeded admin passphrase"}),
+        )
+        .await;
+    assert_eq!(login.status(), StatusCode::OK, "{}", login.text);
+}
+
 struct Response {
     status: StatusCode,
     text: String,

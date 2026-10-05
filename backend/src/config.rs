@@ -80,6 +80,12 @@ pub struct AppConfig {
     pub github_emails_url: String,
     pub super_admin_user_id: Option<Uuid>,
     pub super_admin_email: Option<String>,
+    /// With `super_admin_email`, creates the super admin account at startup
+    /// when it does not exist yet. An existing password is never overwritten.
+    pub super_admin_password: Option<String>,
+    pub super_admin_username: String,
+    /// Directory where uploaded service (OAuth client) logos are stored.
+    pub client_logo_dir: std::path::PathBuf,
     pub cors_origins: Vec<String>,
     pub trust_proxy: bool,
     pub access_token_seconds: i64,
@@ -241,6 +247,9 @@ pub fn from_env() -> AppResult<AppConfig> {
         github_emails_url: env_or("GITHUB_EMAILS_URL", "https://api.github.com/user/emails"),
         super_admin_user_id,
         super_admin_email: empty_none("SUPER_ADMIN_EMAIL").map(|email| email.to_lowercase()),
+        super_admin_password: empty_none("SUPER_ADMIN_PASSWORD"),
+        super_admin_username: env_or("SUPER_ADMIN_USERNAME", "admin"),
+        client_logo_dir: env_or("CLIENT_LOGO_DIR", "./data/client-logos").into(),
         cors_origins,
         trust_proxy: env_flag("TRUST_PROXY", false),
         access_token_seconds: env_i64("ACCESS_TOKEN_SECONDS", 900)?,
