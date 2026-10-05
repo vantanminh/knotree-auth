@@ -554,6 +554,50 @@ export function Avatar({ name, size = 32 }: { name: string; size?: number }) {
   );
 }
 
+/** A service's square logo with rounded corners, or its initials as a fallback. */
+export function ClientLogo({ name, src, size = 40 }: { name: string; src?: string | null; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+    setLoaded(false);
+  }, [src]);
+  const radius = Math.max(6, Math.round(size * 0.22));
+  const initials =
+    name
+      .split(/[\s._-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "?";
+  return (
+    <span
+      aria-hidden="true"
+      style={{ width: size, height: size, borderRadius: radius, fontSize: Math.round(size * 0.36) }}
+      className="relative inline-flex shrink-0 items-center justify-center overflow-hidden border border-line bg-paper font-semibold tracking-tight text-ink-soft shadow-card"
+    >
+      {src && !failed ? (
+        <>
+          {!loaded ? <span className="absolute inset-0 animate-shimmer bg-line/70" /> : null}
+          <img
+            src={src}
+            alt=""
+            width={size}
+            height={size}
+            loading="lazy"
+            decoding="async"
+            onLoad={() => setLoaded(true)}
+            onError={() => setFailed(true)}
+            className={`h-full w-full object-cover transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+          />
+        </>
+      ) : (
+        initials
+      )}
+    </span>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Dialogs & utilities                                                 */
 /* ------------------------------------------------------------------ */

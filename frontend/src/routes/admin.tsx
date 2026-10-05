@@ -25,6 +25,7 @@ import {
   Button,
   Card,
   CardHeader,
+  ClientLogo,
   ConfirmDialog,
   CopyButton,
   EmptyState,
@@ -34,6 +35,7 @@ import {
   buttonClass,
 } from "../components/ui";
 import { ApiError, api } from "../lib/api";
+import { ServiceManagement } from "./admin-services";
 import { eventLabel, eventLabels, formatDate, formatRelative, formatWhen, statusLabel } from "../lib/format";
 import type { MfaSummary, SecurityEvent } from "../lib/types";
 
@@ -95,6 +97,9 @@ type ClientRow = {
   authorized_users: number;
   active_tokens: number;
   last_authorized_at: string | null;
+  description: string | null;
+  homepage_url: string | null;
+  logo_url: string | null;
 };
 
 type ClientDetail = ClientRow & {
@@ -693,7 +698,15 @@ export function AdminClients() {
 
   return (
     <div className="grid gap-6">
-      <PageTitle title={t("Services")} detail={t("Every service registered to sign users in with this account system.")} />
+      <PageTitle
+        title={t("Services")}
+        detail={t("Every service registered to sign users in with this account system.")}
+        actions={
+          <Link to="/admin/clients/new" className={buttonClass("primary")}>
+            {t("New service")}
+          </Link>
+        }
+      />
       {error ? <Alert>{error}</Alert> : null}
       <Card>
         <form className="flex gap-2 border-b border-line p-3 sm:p-4" onSubmit={search}>
@@ -729,6 +742,8 @@ export function AdminClients() {
                     onClick={() => navigate(`/admin/clients/${encodeURIComponent(client.id)}`)}
                   >
                     <td className="px-5 py-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                      <ClientLogo name={client.name} src={client.logo_url} size={36} />
                       <div className="min-w-0">
                         <Link
                           className="block truncate font-medium text-ink hover:underline"
@@ -739,6 +754,7 @@ export function AdminClients() {
                         </Link>
                         <code className="font-mono text-[12.5px] text-muted">{client.id}</code>
                       </div>
+                      </div>
                     </td>
                     <td className="px-3 py-3">
                       <StatusBadge status={client.status} />
@@ -746,7 +762,11 @@ export function AdminClients() {
                     <td className="px-3 py-3">
                       <span className="flex flex-wrap gap-1.5">
                         <Badge tone="outline">{clientTypeLabel(client.client_type)}</Badge>
-                        {client.first_party ? <Badge tone="neutral">{t("First-party")}</Badge> : null}
+                        {client.first_party ? (
+                          <Badge tone="neutral">{t("First-party")}</Badge>
+                        ) : (
+                          <Badge tone="outline">{t("Third-party")}</Badge>
+                        )}
                       </span>
                     </td>
                     <td className="tabular px-3 py-3 text-right text-ink">{numberFormat.format(client.authorized_users)}</td>
@@ -787,14 +807,20 @@ export function AdminClient() {
         <ArrowLeftIcon size={14} />
         {t("All services")}
       </Link>
-      <header className="min-w-0">
+      <header className="flex min-w-0 items-center gap-4">
+        <ClientLogo name={client.name} src={client.logo_url} size={56} />
+        <div className="min-w-0">
         <h1 className="truncate text-[24px] font-semibold leading-tight tracking-[-0.015em] text-ink">{client.name}</h1>
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           <StatusBadge status={client.status} />
           <Badge tone="outline">{clientTypeLabel(client.client_type)}</Badge>
-          {client.first_party ? <Badge tone="neutral">{t("First-party")}</Badge> : null}
+          {client.first_party ? <Badge tone="neutral">{t("First-party")}</Badge> : <Badge tone="outline">{t("Third-party")}</Badge>}
+        </div>
+        {client.description ? <p className="mt-2 max-w-prose text-[14px] text-ink-soft">{client.description}</p> : null}
         </div>
       </header>
+
+      <ServiceManagement client={client} onChange={(next) => setClient({ ...client, ...next })} />
 
       <Card>
         <CardHeader title={t("Details")} />

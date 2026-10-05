@@ -46,6 +46,7 @@ import {
   Switch,
   TextField,
   buttonClass,
+  ClientLogo,
 } from "../components/ui";
 import { ApiError, api } from "../lib/api";
 import { eventLabel, formatDate, formatRelative, formatWhen, isMobileDevice, providerLabel } from "../lib/format";
@@ -1235,9 +1236,7 @@ export function AuthorizedAppsPage() {
           <ul className="divide-y divide-line">
             {items.map((item) => (
               <li key={item.client_id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:px-6">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] border border-line bg-paper text-ink-soft">
-                  <AppIcon />
-                </span>
+                <ClientLogo name={item.name} src={item.logo_url} size={36} />
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-ink">
                     {item.name}

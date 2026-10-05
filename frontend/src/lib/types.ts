@@ -50,6 +50,8 @@ export type AuthorizationItem = {
   granted_at: string;
   last_used_at: string | null;
   active_grants: number;
+  description?: string | null;
+  logo_url?: string | null;
 };
 
 export type SecurityEvent = {
