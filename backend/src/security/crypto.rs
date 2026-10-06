@@ -2,7 +2,7 @@ use crate::error::{AppError, AppResult};
 use crate::security::random::random_bytes;
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
-use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use base64::engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD};
 use base64::Engine;
 use std::collections::BTreeMap;
 
@@ -23,9 +23,7 @@ impl TotpKeyring {
                 .trim()
                 .parse()
                 .map_err(|_| AppError::internal("invalid TOTP key version"))?;
-            let bytes = STANDARD
-                .decode(material.trim())
-                .or_else(|_| URL_SAFE_NO_PAD.decode(material.trim()))
+            let bytes = decode_base64_flexible(material)
                 .map_err(|_| AppError::internal("TOTP key is not base64"))?;
             if bytes.len() != 32 {
                 return Err(AppError::internal("TOTP key must be 32 bytes"));
@@ -91,6 +89,30 @@ impl TotpKeyring {
     }
 }
 
+/// Accepts standard or URL-safe base64, missing padding, and spaces that
+/// replaced `+` while the value passed through a form or env panel.
+pub fn decode_base64_flexible(material: &str) -> Result<Vec<u8>, ()> {
+    let cleaned: String = material
+        .trim()
+        .trim_matches(|c| c == '"' || c == '\'')
+        .chars()
+        .map(|c| if c == ' ' { '+' } else { c })
+        .filter(|c| !matches!(c, '\n' | '\r' | '\t'))
+        .collect();
+    if let Ok(bytes) = STANDARD.decode(&cleaned) {
+        return Ok(bytes);
+    }
+    let padded = match cleaned.len() % 4 {
+        0 => cleaned.clone(),
+        n => format!("{cleaned}{}", "=".repeat(4 - n)),
+    };
+    STANDARD
+        .decode(&padded)
+        .or_else(|_| URL_SAFE.decode(&padded))
+        .or_else(|_| URL_SAFE_NO_PAD.decode(cleaned.trim_end_matches('=')))
+        .map_err(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,5 +123,14 @@ mod tests {
         let (version, nonce, ciphertext) = ring.encrypt(b"secret-bytes").unwrap();
         let plain = ring.decrypt(version, &nonce, &ciphertext).unwrap();
         assert_eq!(plain, b"secret-bytes");
+    }
+
+    #[test]
+    fn totp_spec_accepts_unpadded_and_space_mangled_base64() {
+        let spec = format!("1:{}", STANDARD.encode([9u8; 32]));
+        let unpadded = spec.trim_end_matches('=');
+        TotpKeyring::from_spec(unpadded, 1).unwrap();
+        let spaced = spec.replace('+', " ");
+        TotpKeyring::from_spec(&spaced, 1).unwrap();
     }
 }
