@@ -103,7 +103,126 @@ def validate(contract, config, secrets):
             raise Invalid("Invalid DATABASE_CREDENTIALS_ENCRYPTION_KEY") from None
         if len(raw) != 32:
             raise Invalid("DATABASE_CREDENTIALS_ENCRYPTION_KEY must encode 32 bytes")
+    errors = value_errors(config, secrets)
+    if errors:
+        raise Invalid("\n".join(errors))
     return config, secrets
+
+
+def value_errors(config, secrets):
+    """Check every supplied value. Returns every problem, not only the first."""
+    errors = []
+    combined = {**config, **secrets}
+    account = secrets.get("CLOUDFLARE_ACCOUNT_ID", "")
+    if account and (len(account) != 32 or any(c not in "0123456789abcdefABCDEF" for c in account)):
+        errors.append("CLOUDFLARE_ACCOUNT_ID must be a 32-character hexadecimal ID")
+    memory = config.get("ARGON2_MEMORY_KIB", "")
+    if memory:
+        try:
+            if int(memory) < 19456:
+                errors.append("ARGON2_MEMORY_KIB must be at least 19456 in production")
+        except ValueError:
+            errors.append("ARGON2_MEMORY_KIB must be an integer")
+    for name in ("ARGON2_ITERATIONS", "ARGON2_PARALLELISM"):
+        value = config.get(name, "")
+        if value:
+            try:
+                if int(value) <= 0:
+                    raise ValueError
+            except ValueError:
+                errors.append(name + " must be a positive integer")
+    bind = config.get("BIND_ADDR", "")
+    if bind and not re.fullmatch(r".+:\d+$", bind):
+        errors.append("BIND_ADDR must be host:port")
+    if "TOTP_ENCRYPTION_KEYS" in secrets:
+        errors.extend(totp_errors(secrets["TOTP_ENCRYPTION_KEYS"], config.get("TOTP_ENCRYPTION_KEY_VERSION", "1")))
+    if "JWT_PRIVATE_KEY_PEM" in secrets:
+        errors.extend(pem_errors("JWT_PRIVATE_KEY_PEM", secrets["JWT_PRIVATE_KEY_PEM"], "PRIVATE KEY"))
+    previous = secrets.get("JWT_PREVIOUS_PUBLIC_KEY_PEM", "")
+    if previous:
+        errors.extend(pem_errors("JWT_PREVIOUS_PUBLIC_KEY_PEM", previous, "PUBLIC KEY"))
+    for name in ("POSTGRES_CA_PEM", "POSTGRES_TLS_CERT_PEM", "POSTGRES_TLS_KEY_PEM"):
+        if secrets.get(name):
+            errors.extend(pem_errors(name, secrets[name], None))
+    email = config.get("EMAIL_FROM", "")
+    if email and ("@" not in email or any(c.isspace() for c in email)):
+        errors.append("EMAIL_FROM must be an email address")
+    origins = config.get("CORS_ORIGINS", "")
+    if origins:
+        for origin in [part.strip() for part in origins.split(",") if part.strip()]:
+            url = urlsplit(origin)
+            if url.scheme not in ("http", "https") or not url.hostname:
+                errors.append("CORS_ORIGINS contains an invalid URL: " + origin)
+    for name in (
+        "SESSION_TTL_HOURS", "SESSION_IDLE_HOURS", "ADMIN_SESSION_HOURS", "ADMIN_IDLE_MINUTES",
+        "STEP_UP_MINUTES", "ACCESS_TOKEN_SECONDS", "REFRESH_TOKEN_DAYS", "AUTH_CODE_SECONDS",
+        "EMAIL_OTP_SECONDS", "VERIFICATION_HOURS", "RESET_MINUTES",
+    ):
+        value = combined.get(name, "")
+        if value:
+            try:
+                if int(value) <= 0:
+                    raise ValueError
+            except ValueError:
+                errors.append(name + " must be a positive integer")
+    return errors
+
+
+def totp_errors(spec, active):
+    try:
+        version = int(active)
+    except ValueError:
+        return ["TOTP_ENCRYPTION_KEY_VERSION must be an integer"]
+    seen = set()
+    errors = []
+    for part in [item.strip() for item in spec.split(",") if item.strip()]:
+        if ":" not in part:
+            errors.append("TOTP_ENCRYPTION_KEYS must be version:base64")
+            continue
+        raw_version, material = part.split(":", 1)
+        try:
+            key_version = int(raw_version)
+        except ValueError:
+            errors.append("TOTP_ENCRYPTION_KEYS has an invalid version")
+            continue
+        try:
+            decoded = base64.b64decode(material, validate=True)
+        except ValueError:
+            if "=" in material:
+                errors.append("TOTP_ENCRYPTION_KEYS is not base64")
+                continue
+            padded = material + "=" * (-len(material) % 4)
+            try:
+                decoded = base64.b64decode(padded, altchars=b"-_", validate=True)
+            except ValueError:
+                errors.append("TOTP_ENCRYPTION_KEYS is not base64")
+                continue
+        if len(decoded) != 32:
+            errors.append("TOTP_ENCRYPTION_KEYS must encode 32 bytes")
+            continue
+        seen.add(key_version)
+    if not errors and version not in seen:
+        errors.append("TOTP_ENCRYPTION_KEYS is missing the active version")
+    return errors
+
+
+def pem_errors(name, value, label):
+    if "\x00" in value:
+        return [name + " contains a NUL byte"]
+    pem = value.replace("\\n", "\n").strip()
+    if label:
+        begin = "-----BEGIN " + label + "-----"
+        end = "-----END " + label + "-----"
+        if not pem.startswith(begin) or not pem.endswith(end):
+            return [name + " is not a PEM " + label]
+    elif "-----BEGIN " not in pem or "-----END " not in pem:
+        return [name + " is not a PEM"]
+    body = "".join(line for line in pem.splitlines() if not line.startswith("-----"))
+    try:
+        base64.b64decode(body, validate=True)
+    except ValueError:
+        return [name + " PEM body is not base64"]
+    return []
 
 
 def resource(kind, name, namespace, values, secret_type="Opaque"):

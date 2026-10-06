@@ -23,6 +23,19 @@ class DeploymentContractTests(unittest.TestCase):
             self.secrets["DATABASE_URL"] = f"postgres://{user}:test-only-value@postgres/{database}"
         if "DATABASE_CREDENTIALS_ENCRYPTION_KEY" in self.secrets:
             self.secrets["DATABASE_CREDENTIALS_ENCRYPTION_KEY"] = base64.urlsafe_b64encode(b"x" * 32).decode()
+        if "TOTP_ENCRYPTION_KEYS" in self.secrets:
+            self.secrets["TOTP_ENCRYPTION_KEYS"] = "1:" + base64.b64encode(b"k" * 32).decode()
+        if "JWT_PRIVATE_KEY_PEM" in self.secrets:
+            self.secrets["JWT_PRIVATE_KEY_PEM"] = "-----BEGIN PRIVATE KEY-----\\nAAAA\\n-----END PRIVATE KEY-----"
+        if "CLOUDFLARE_ACCOUNT_ID" in self.secrets:
+            self.secrets["CLOUDFLARE_ACCOUNT_ID"] = "660453f3bb001791035317c5afd375f0"
+        for name, label in (
+            ("POSTGRES_CA_PEM", "CERTIFICATE"),
+            ("POSTGRES_TLS_CERT_PEM", "CERTIFICATE"),
+            ("POSTGRES_TLS_KEY_PEM", "PRIVATE KEY"),
+        ):
+            if name in self.secrets:
+                self.secrets[name] = f"-----BEGIN {label}-----\\nAAAA\\n-----END {label}-----"
 
     def test_complete_contract(self):
         runtime.validate(self.contract, self.config, self.secrets)
@@ -78,6 +91,18 @@ class DeploymentContractTests(unittest.TestCase):
         secrets = {**self.secrets, "DATABASE_URL": "postgres://other:test-only-value@postgres/other"}
         with self.assertRaisesRegex(runtime.Invalid, "POSTGRES_USER and POSTGRES_DB"):
             runtime.validate(self.contract, self.config, secrets)
+
+    def test_invalid_totp_and_jwt_are_reported_together(self):
+        secrets = {
+            **self.secrets,
+            "TOTP_ENCRYPTION_KEYS": "1:not-base64!!!",
+            "JWT_PRIVATE_KEY_PEM": "\0-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----",
+        }
+        with self.assertRaises(runtime.Invalid) as caught:
+            runtime.validate(self.contract, self.config, secrets)
+        message = str(caught.exception)
+        self.assertIn("TOTP_ENCRYPTION_KEYS", message)
+        self.assertIn("NUL byte", message)
 
     def test_invalid_optional_super_admin_uuid_is_rejected(self):
         config = {**self.config, "SUPER_ADMIN_USER_ID": "not-a-uuid"}

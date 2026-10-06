@@ -3,7 +3,7 @@ use crate::security::crypto::TotpKeyring;
 use crate::security::password::{hash_password, ArgonSettings};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
+use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding};
 use rsa::traits::PublicKeyParts;
 use rsa::RsaPrivateKey;
 use std::env;
@@ -111,6 +111,13 @@ impl AppConfig {
 }
 
 pub fn from_env() -> AppResult<AppConfig> {
+    let problems = env_problems();
+    if !problems.is_empty() {
+        return Err(AppError::internal(format!(
+            "environment check failed:\n{}",
+            problems.join("\n")
+        )));
+    }
     let env_name = env_or("APP_ENV", "development");
     let environment = Environment::parse(&env_name)?;
     let database_url = required("DATABASE_URL")?;
@@ -347,7 +354,7 @@ fn load_jwt_keys(environment: Environment) -> AppResult<(Vec<JwtKey>, String)> {
 }
 
 fn jwt_key_from_private(kid: &str, pem: &str) -> AppResult<JwtKey> {
-    let private = rsa::pkcs8::DecodePrivateKey::from_pkcs8_pem(pem).map_err(AppError::internal)?;
+    let private = <RsaPrivateKey as DecodePrivateKey>::from_pkcs8_pem(pem).map_err(AppError::internal)?;
     let private: RsaPrivateKey = private;
     let public = rsa::RsaPublicKey::from(&private);
     let public_pem = public
@@ -364,7 +371,7 @@ fn jwt_key_from_private(kid: &str, pem: &str) -> AppResult<JwtKey> {
 }
 
 fn jwt_key_from_public(kid: &str, pem: &str) -> AppResult<JwtKey> {
-    let public = <rsa::RsaPublicKey as rsa::pkcs8::DecodePublicKey>::from_public_key_pem(pem)
+    let public = <rsa::RsaPublicKey as DecodePublicKey>::from_public_key_pem(pem)
         .map_err(AppError::internal)?;
     let (n, e) = rsa_components(&public);
     Ok(JwtKey {
@@ -412,6 +419,284 @@ fn validate_base_url(url: &str, environment: Environment) -> AppResult<()> {
     Ok(())
 }
 
+/// Every set variable is checked. Production also requires the settings the
+/// process cannot start without. Callers get the full list, not the first failure.
+pub fn env_problems() -> Vec<String> {
+    let vars: std::collections::HashMap<String, String> = env::vars().collect();
+    check_assignments(&vars)
+}
+
+pub fn check_assignments(vars: &std::collections::HashMap<String, String>) -> Vec<String> {
+    let mut problems = Vec::new();
+    let env_name = vars
+        .get("APP_ENV")
+        .filter(|value| !value.is_empty())
+        .map(|value| value.as_str())
+        .unwrap_or("development");
+    let environment = match Environment::parse(env_name) {
+        Ok(environment) => Some(environment),
+        Err(_) => {
+            problems.push("APP_ENV must be development, staging, or production".into());
+            None
+        }
+    };
+    let production = environment.is_some_and(Environment::is_production);
+
+    match vars.get("DATABASE_URL").map(|value| value.trim()) {
+        Some(url) if !url.is_empty() => {
+            if url::Url::parse(url)
+                .ok()
+                .filter(|parsed| matches!(parsed.scheme(), "postgres" | "postgresql"))
+                .is_none()
+            {
+                problems.push("DATABASE_URL must be a postgres or postgresql URL".into());
+            }
+        }
+        _ => problems.push("DATABASE_URL is required".into()),
+    }
+
+    if let Some(bind) = vars.get("BIND_ADDR").filter(|value| !value.is_empty()) {
+        if bind.parse::<std::net::SocketAddr>().is_err() {
+            problems.push("BIND_ADDR must be host:port".into());
+        }
+    }
+
+    let base = vars
+        .get("APP_BASE_URL")
+        .filter(|value| !value.is_empty())
+        .map(|value| value.as_str())
+        .unwrap_or("http://localhost:5173");
+    match url::Url::parse(base) {
+        Ok(parsed) if parsed.scheme() == "https" || parsed.scheme() == "http" => {
+            if production && parsed.scheme() != "https" {
+                problems.push("APP_BASE_URL must be https in production".into());
+            }
+        }
+        _ => problems.push("APP_BASE_URL is invalid".into()),
+    }
+
+    if let Some(value) = vars.get("COOKIE_SECURE").filter(|value| !value.is_empty()) {
+        if !matches!(value.as_str(), "true" | "false" | "1" | "0") {
+            problems.push("COOKIE_SECURE must be true or false".into());
+        } else if production && value != "true" && value != "1" {
+            problems.push("COOKIE_SECURE must be true in production".into());
+        }
+    }
+
+    if let Some(value) = vars.get("DEV_MAILBOX").filter(|value| !value.is_empty()) {
+        if !matches!(value.as_str(), "true" | "false" | "1" | "0") {
+            problems.push("DEV_MAILBOX must be true or false".into());
+        } else if production && (value == "true" || value == "1") {
+            problems.push("DEV_MAILBOX cannot be enabled in production".into());
+        }
+    }
+
+    if let Some(value) = vars.get("TRUST_PROXY").filter(|value| !value.is_empty()) {
+        if !matches!(value.as_str(), "true" | "false" | "1" | "0") {
+            problems.push("TRUST_PROXY must be true or false".into());
+        }
+    }
+
+    let dev_mailbox = vars
+        .get("DEV_MAILBOX")
+        .map(|value| value == "true" || value == "1")
+        .unwrap_or(environment == Some(Environment::Development));
+    let email_provider = vars
+        .get("EMAIL_PROVIDER")
+        .filter(|value| !value.is_empty())
+        .cloned()
+        .unwrap_or_else(|| {
+            if dev_mailbox {
+                "outbox".into()
+            } else {
+                "cloudflare".into()
+            }
+        });
+    if !matches!(email_provider.as_str(), "outbox" | "cloudflare") {
+        problems.push("EMAIL_PROVIDER must be outbox or cloudflare".into());
+    }
+    if let Some(from) = vars.get("EMAIL_FROM").filter(|value| !value.trim().is_empty()) {
+        if !from.contains('@') || from.contains(char::is_whitespace) {
+            problems.push("EMAIL_FROM must be an email address".into());
+        }
+    }
+    if email_provider == "cloudflare" {
+        match vars
+            .get("CLOUDFLARE_ACCOUNT_ID")
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        {
+            Some(id)
+                if id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit()) => {}
+            Some(_) => problems.push(
+                "CLOUDFLARE_ACCOUNT_ID must be a 32-character hexadecimal ID".into(),
+            ),
+            None if production => problems.push(
+                "CLOUDFLARE_ACCOUNT_ID is required when EMAIL_PROVIDER=cloudflare".into(),
+            ),
+            None => {}
+        }
+        if production
+            && vars
+                .get("CLOUDFLARE_EMAIL_API_TOKEN")
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty())
+                .is_none()
+        {
+            problems
+                .push("CLOUDFLARE_EMAIL_API_TOKEN is required when EMAIL_PROVIDER=cloudflare".into());
+        }
+    }
+
+    match vars
+        .get("ARGON2_MEMORY_KIB")
+        .filter(|value| !value.is_empty())
+    {
+        Some(value) => match value.parse::<u32>() {
+                Ok(memory) if production && memory < 19_456 => {
+                problems.push("ARGON2_MEMORY_KIB must be at least 19456 in production".into());
+            }
+            Ok(_) => {}
+            Err(_) => problems.push("ARGON2_MEMORY_KIB must be an integer".into()),
+        },
+        None => {}
+    }
+    for name in ["ARGON2_ITERATIONS", "ARGON2_PARALLELISM"] {
+        if let Some(value) = vars.get(name).filter(|value| !value.is_empty()) {
+            if value.parse::<u32>().ok().filter(|n| *n > 0).is_none() {
+                problems.push(format!("{name} must be a positive integer"));
+            }
+        }
+    }
+
+    let active_totp = vars
+        .get("TOTP_ENCRYPTION_KEY_VERSION")
+        .filter(|value| !value.is_empty())
+        .map(|value| value.as_str())
+        .unwrap_or("1");
+    let active_totp_version = match active_totp.parse::<u16>() {
+        Ok(version) => version,
+        Err(_) => {
+            problems.push("TOTP_ENCRYPTION_KEY_VERSION must be an integer".into());
+            1
+        }
+    };
+    match vars
+        .get("TOTP_ENCRYPTION_KEYS")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        Some(spec) => {
+            if let Err(err) = TotpKeyring::from_spec(spec, active_totp_version) {
+                problems.push(format!(
+                    "TOTP_ENCRYPTION_KEYS: {}",
+                    err.startup_message()
+                ));
+            }
+        }
+        None if production => problems.push("TOTP_ENCRYPTION_KEYS is required".into()),
+        None => {}
+    }
+
+    match vars
+        .get("JWT_PRIVATE_KEY_PEM")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        Some(pem) => check_private_pem("JWT_PRIVATE_KEY_PEM", pem, &mut problems),
+        None if production => problems.push("JWT_PRIVATE_KEY_PEM is required".into()),
+        None => {}
+    }
+    if let Some(pem) = vars
+        .get("JWT_PREVIOUS_PUBLIC_KEY_PEM")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        check_public_pem("JWT_PREVIOUS_PUBLIC_KEY_PEM", pem, &mut problems);
+    }
+
+    if let Some(origins) = vars.get("CORS_ORIGINS").filter(|value| !value.trim().is_empty()) {
+        for origin in origins.split(',').map(str::trim).filter(|origin| !origin.is_empty()) {
+            let parsed = url::Url::parse(origin).ok();
+            if parsed
+                .as_ref()
+                .filter(|url| matches!(url.scheme(), "http" | "https"))
+                .is_none()
+            {
+                problems.push(format!("CORS_ORIGINS contains an invalid URL: {origin}"));
+            }
+        }
+    }
+
+    if let Some(value) = vars
+        .get("SUPER_ADMIN_USER_ID")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        if Uuid::parse_str(value).is_err() {
+            problems.push("SUPER_ADMIN_USER_ID is not a UUID".into());
+        }
+    }
+    for (left, right) in [
+        ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"),
+        ("GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"),
+    ] {
+        let has_left = vars
+            .get(left)
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false);
+        let has_right = vars
+            .get(right)
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false);
+        if has_left != has_right {
+            problems.push(format!("{left} and {right} must both be set or both be empty"));
+        }
+    }
+    for name in [
+        "SESSION_TTL_HOURS",
+        "SESSION_IDLE_HOURS",
+        "ADMIN_SESSION_HOURS",
+        "ADMIN_IDLE_MINUTES",
+        "STEP_UP_MINUTES",
+        "ACCESS_TOKEN_SECONDS",
+        "REFRESH_TOKEN_DAYS",
+        "AUTH_CODE_SECONDS",
+        "EMAIL_OTP_SECONDS",
+        "VERIFICATION_HOURS",
+        "RESET_MINUTES",
+    ] {
+        if let Some(value) = vars.get(name).filter(|value| !value.is_empty()) {
+            if value.parse::<i64>().ok().filter(|n| *n > 0).is_none() {
+                problems.push(format!("{name} must be a positive integer"));
+            }
+        }
+    }
+    problems
+}
+
+fn check_private_pem(name: &str, raw: &str, problems: &mut Vec<String>) {
+    if raw.contains('\0') {
+        problems.push(format!("{name} contains a NUL byte"));
+        return;
+    }
+    let pem = raw.replace("\\n", "\n");
+    if <RsaPrivateKey as DecodePrivateKey>::from_pkcs8_pem(&pem).is_err() {
+        problems.push(format!("{name} is not a PKCS#8 private key"));
+    }
+}
+
+fn check_public_pem(name: &str, raw: &str, problems: &mut Vec<String>) {
+    if raw.contains('\0') {
+        problems.push(format!("{name} contains a NUL byte"));
+        return;
+    }
+    let pem = raw.replace("\\n", "\n");
+    if <rsa::RsaPublicKey as DecodePublicKey>::from_public_key_pem(&pem).is_err() {
+        problems.push(format!("{name} is not a PKCS#8 public key"));
+    }
+}
+
 fn required(name: &str) -> AppResult<String> {
     env::var(name)
         .ok()
@@ -443,6 +728,61 @@ fn env_u32(name: &str, default: u32) -> AppResult<u32> {
             .parse()
             .map_err(|_| AppError::internal(format!("{name} must be an integer"))),
         _ => Ok(default),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rsa::pkcs8::EncodePrivateKey;
+    use rsa::RsaPrivateKey;
+
+    fn production_vars() -> std::collections::HashMap<String, String> {
+        let mut rng = rand::rngs::OsRng;
+        let key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
+        let pem = key.to_pkcs8_pem(LineEnding::LF).unwrap().to_string();
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("APP_ENV".into(), "production".into());
+        vars.insert(
+            "DATABASE_URL".into(),
+            "postgresql://postgres:secret@db:5432/auth".into(),
+        );
+        vars.insert("APP_BASE_URL".into(), "https://accounts.knotree.com".into());
+        vars.insert("COOKIE_SECURE".into(), "true".into());
+        vars.insert("DEV_MAILBOX".into(), "false".into());
+        vars.insert("EMAIL_PROVIDER".into(), "cloudflare".into());
+        vars.insert(
+            "CLOUDFLARE_ACCOUNT_ID".into(),
+            "660453f3bb001791035317c5afd375f0".into(),
+        );
+        vars.insert("CLOUDFLARE_EMAIL_API_TOKEN".into(), "token".into());
+        vars.insert("ARGON2_MEMORY_KIB".into(), "19456".into());
+        vars.insert(
+            "TOTP_ENCRYPTION_KEYS".into(),
+            format!("1:{}", STANDARD.encode([7u8; 32])),
+        );
+        vars.insert("JWT_PRIVATE_KEY_PEM".into(), pem.replace('\n', "\\n"));
+        vars
+    }
+
+    #[test]
+    fn production_assignments_pass() {
+        assert!(check_assignments(&production_vars()).is_empty());
+    }
+
+    #[test]
+    fn production_reports_every_invalid_secret() {
+        let mut vars = production_vars();
+        vars.insert("TOTP_ENCRYPTION_KEYS".into(), "1:not base64!!!".into());
+        let mut pem = vars.get("JWT_PRIVATE_KEY_PEM").unwrap().clone();
+        pem.insert(0, '\0');
+        vars.insert("JWT_PRIVATE_KEY_PEM".into(), pem);
+        vars.insert("CLOUDFLARE_ACCOUNT_ID".into(), "short".into());
+        let problems = check_assignments(&vars);
+        let joined = problems.join("\n");
+        assert!(joined.contains("TOTP_ENCRYPTION_KEYS"), "{joined}");
+        assert!(joined.contains("NUL byte"), "{joined}");
+        assert!(joined.contains("CLOUDFLARE_ACCOUNT_ID"), "{joined}");
     }
 }
 
