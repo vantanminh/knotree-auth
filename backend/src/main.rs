@@ -50,6 +50,12 @@ async fn run() -> knotree_accounts::AppResult<()> {
     let state = knotree_accounts::connect(config).await?;
     knotree_accounts::auth::bootstrap_admin(&state).await?;
     knotree_accounts::auth::ensure_dev_redirects(&state).await?;
+    std::fs::create_dir_all(&state.config.client_logo_dir).map_err(|err| {
+        knotree_accounts::AppError::internal(format!(
+            "CLIENT_LOGO_DIR {} is not writable: {err}",
+            state.config.client_logo_dir.display()
+        ))
+    })?;
     let worker = state.clone();
     tokio::spawn(async move {
         loop {

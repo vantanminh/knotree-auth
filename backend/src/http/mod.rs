@@ -17,9 +17,16 @@ use uuid::Uuid;
 
 pub fn router(state: AppState) -> Router {
     let cors = cors_layer(&state);
-    Router::new()
+    let small_bodies = Router::new()
         .merge(routes::public_routes())
         .merge(routes::api_routes())
+        .layer(RequestBodyLimitLayer::new(64 * 1024));
+    let uploads = routes::upload_routes().layer(RequestBodyLimitLayer::new(
+        crate::admin::clients::LOGO_MAX_BYTES + 64 * 1024,
+    ));
+    Router::new()
+        .merge(small_bodies)
+        .merge(uploads)
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             security_headers,
@@ -30,7 +37,6 @@ pub fn router(state: AppState) -> Router {
             axum::http::StatusCode::GATEWAY_TIMEOUT,
             std::time::Duration::from_secs(30),
         ))
-        .layer(RequestBodyLimitLayer::new(64 * 1024))
         .with_state(state)
 }
 

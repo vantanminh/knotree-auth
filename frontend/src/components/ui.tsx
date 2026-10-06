@@ -6,6 +6,7 @@ import { Field } from "@base-ui/react/field";
 import { Input as BaseInput } from "@base-ui/react/input";
 import { Switch as BaseSwitch } from "@base-ui/react/switch";
 import { useEffect, useId, useState, type ComponentProps, type ReactNode } from "react";
+import { useDelayedBusy, useRequestsInFlight } from "../lib/loading";
 import {
   AlertIcon,
   CheckCircleIcon,
@@ -66,16 +67,38 @@ export function Button({
   disabled,
   ...props
 }: ButtonProps) {
+  // The button locks immediately to stop double submits, but the spinner only
+  // appears when the action is slow enough to notice, so fast actions never flicker.
+  const showSpinner = useDelayedBusy(Boolean(pending));
   return (
     <BaseButton
-      className={buttonClass(variant, size, className)}
+      className={buttonClass(variant, size, `${pending ? "cursor-progress" : ""} ${className}`)}
       disabled={disabled || pending}
       aria-busy={pending || undefined}
       {...props}
     >
-      {pending ? <Spinner className="shrink-0" /> : icon ? <span className="-ml-0.5 shrink-0 opacity-90">{icon}</span> : null}
+      {showSpinner ? (
+        <Spinner className="shrink-0 animate-pop-in" />
+      ) : icon ? (
+        <span className="-ml-0.5 shrink-0 opacity-90">{icon}</span>
+      ) : null}
       {children}
     </BaseButton>
+  );
+}
+
+/** A thin bar at the top of the page while any API request is slow. */
+export function TopProgress() {
+  const visible = useDelayedBusy(useRequestsInFlight(), 200, 300);
+  return (
+    <div
+      aria-hidden="true"
+      className={`pointer-events-none fixed inset-x-0 top-0 z-50 h-[2px] overflow-hidden transition-opacity duration-300 ${
+        visible ? "opacity-100" : "opacity-0"
+      }`}
+    >
+      {visible ? <div className="h-full w-full origin-left animate-progress bg-pine" /> : null}
+    </div>
   );
 }
 
@@ -397,8 +420,9 @@ export function Skeleton({ className = "" }: { className?: string }) {
 }
 
 export function PageSkeleton({ label }: { label: string }) {
+  const visible = useDelayedBusy(true, 120, 0);
   return (
-    <div role="status" aria-live="polite" className="grid gap-6">
+    <div role="status" aria-live="polite" className={`grid gap-6 transition-opacity duration-200 ${visible ? "opacity-100" : "opacity-0"}`}>
       <span className="sr-only">{label}</span>
       <div className="grid gap-2">
         <Skeleton className="h-7 w-48" />
@@ -550,6 +574,50 @@ export function Avatar({ name, size = 32 }: { name: string; size?: number }) {
       className="inline-flex shrink-0 items-center justify-center rounded-full border border-pine-line bg-pine-soft font-semibold tracking-tight text-pine"
     >
       {initials}
+    </span>
+  );
+}
+
+/** A service's square logo with rounded corners, or its initials as a fallback. */
+export function ClientLogo({ name, src, size = 40 }: { name: string; src?: string | null; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+    setLoaded(false);
+  }, [src]);
+  const radius = Math.max(6, Math.round(size * 0.22));
+  const initials =
+    name
+      .split(/[\s._-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "?";
+  return (
+    <span
+      aria-hidden="true"
+      style={{ width: size, height: size, borderRadius: radius, fontSize: Math.round(size * 0.36) }}
+      className="relative inline-flex shrink-0 items-center justify-center overflow-hidden border border-line bg-paper font-semibold tracking-tight text-ink-soft shadow-card"
+    >
+      {src && !failed ? (
+        <>
+          {!loaded ? <span className="absolute inset-0 animate-shimmer bg-line/70" /> : null}
+          <img
+            src={src}
+            alt=""
+            width={size}
+            height={size}
+            loading="lazy"
+            decoding="async"
+            onLoad={() => setLoaded(true)}
+            onError={() => setFailed(true)}
+            className={`h-full w-full object-cover transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+          />
+        </>
+      ) : (
+        initials
+      )}
     </span>
   );
 }

@@ -1,3 +1,5 @@
+pub mod clients;
+
 use crate::auth::{self, ClientMeta};
 use crate::email::{self, templates};
 use crate::error::{AppError, AppResult};
@@ -680,6 +682,9 @@ type ClientRow = (
     i64,
     i64,
     Option<DateTime<Utc>>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
 );
 
 /// Registered OAuth clients with usage counts. Never exposes `secret_hash`.
@@ -710,7 +715,8 @@ async fn client_rows(
                (SELECT COUNT(*) FROM oauth_access_tokens t
                    WHERE t.client_id = c.id AND t.revoked_at IS NULL AND t.expires_at > now()),
                (SELECT MAX(occurred_at) FROM security_events s
-                   WHERE s.client_id = c.id AND s.event_type = 'OAUTH_AUTHORIZED')
+                   WHERE s.client_id = c.id AND s.event_type = 'OAUTH_AUTHORIZED'),
+               c.description, c.homepage_url, c.logo_path
         FROM oauth_clients c
         WHERE ($1::text IS NULL OR c.id = $1)
           AND ($2::text IS NULL OR c.id ILIKE $2 ESCAPE '\' OR c.name ILIKE $2 ESCAPE '\')
@@ -743,6 +749,9 @@ fn client_json(row: ClientRow) -> Value {
         "authorized_users": row.10,
         "active_tokens": row.11,
         "last_authorized_at": row.12,
+        "description": row.13,
+        "homepage_url": row.14,
+        "logo_url": clients::logo_url(row.15.as_deref()),
     })
 }
 

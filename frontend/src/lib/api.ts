@@ -1,3 +1,4 @@
+import { trackRequest } from "./loading";
 import { getLocale, t } from "./i18n";
 
 export class ApiError extends Error {
@@ -38,13 +39,13 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const headers = new Headers(init.headers);
   if (!headers.has("accept-language")) headers.set("accept-language", getLocale());
-  if (init.body && !headers.has("content-type")) {
+  if (init.body && !(init.body instanceof FormData) && !headers.has("content-type")) {
     headers.set("content-type", "application/json");
   }
   if (method !== "GET" && method !== "HEAD") {
     headers.set("x-csrf-token", await ensureCsrf());
   }
-  const response = await fetch(path, { ...init, method, headers, credentials: "include" });
+  const response = await trackRequest(fetch(path, { ...init, method, headers, credentials: "include" }));
   const text = await response.text();
   const parsed = text ? (JSON.parse(text) as unknown) : null;
   if (!response.ok) {

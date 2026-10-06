@@ -2,7 +2,9 @@ use crate::admin::{self, ClientQuery, LogFilters, UserQuery};
 use crate::error::AppError;
 use crate::http::extract::{require_recent_auth, AdminSession, Csrf, Meta};
 use crate::state::AppState;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Multipart, Path, Query, State};
+use axum::http::header;
+use axum::response::IntoResponse;
 use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -199,4 +201,103 @@ pub async fn client(
     Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     Ok(Json(admin::client_detail(&state, &id).await?))
+}
+
+pub async fn create_client(
+    State(state): State<AppState>,
+    admin: AdminSession,
+    Meta(meta): Meta,
+    Csrf: Csrf,
+    Json(body): Json<admin::clients::ClientInput>,
+) -> Result<Json<Value>, AppError> {
+    require_recent_auth(&state, &admin.0.session)?;
+    Ok(Json(
+        admin::clients::create_client(&state, admin.0.session.user_id, body, &meta).await?,
+    ))
+}
+
+pub async fn update_client(
+    State(state): State<AppState>,
+    admin: AdminSession,
+    Meta(meta): Meta,
+    Csrf: Csrf,
+    Path(id): Path<String>,
+    Json(body): Json<admin::clients::ClientInput>,
+) -> Result<Json<Value>, AppError> {
+    require_recent_auth(&state, &admin.0.session)?;
+    Ok(Json(
+        admin::clients::update_client(&state, admin.0.session.user_id, &id, body, &meta).await?,
+    ))
+}
+
+pub async fn rotate_client_secret(
+    State(state): State<AppState>,
+    admin: AdminSession,
+    Meta(meta): Meta,
+    Csrf: Csrf,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    require_recent_auth(&state, &admin.0.session)?;
+    Ok(Json(
+        admin::clients::rotate_secret(&state, admin.0.session.user_id, &id, &meta).await?,
+    ))
+}
+
+pub async fn upload_client_logo(
+    State(state): State<AppState>,
+    admin: AdminSession,
+    Meta(meta): Meta,
+    Csrf: Csrf,
+    Path(id): Path<String>,
+    mut multipart: Multipart,
+) -> Result<Json<Value>, AppError> {
+    require_recent_auth(&state, &admin.0.session)?;
+    let mut bytes = None;
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| AppError::Validation("Upload a PNG, JPEG or WebP image."))?
+    {
+        if field.name() == Some("logo") {
+            let data = field
+                .bytes()
+                .await
+                .map_err(|_| AppError::Validation("The logo must be 1 MB or smaller."))?;
+            bytes = Some(data);
+            break;
+        }
+    }
+    let Some(bytes) = bytes else {
+        return Err(AppError::Validation("Upload a PNG, JPEG or WebP image."));
+    };
+    Ok(Json(
+        admin::clients::set_logo(&state, admin.0.session.user_id, &id, &bytes, &meta).await?,
+    ))
+}
+
+pub async fn delete_client_logo(
+    State(state): State<AppState>,
+    admin: AdminSession,
+    Meta(meta): Meta,
+    Csrf: Csrf,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    require_recent_auth(&state, &admin.0.session)?;
+    admin::clients::remove_logo(&state, admin.0.session.user_id, &id, &meta).await?;
+    Ok(Json(serde_json::json!({"status": "removed"})))
+}
+
+pub async fn client_logo(
+    State(state): State<AppState>,
+    Path(file): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let bytes = admin::clients::logo_file(&state, &file).await?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        bytes,
+    ))
 }
