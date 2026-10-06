@@ -1,33 +1,5 @@
 name: ci
 jobs:
-  deploy-preflight:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Fail deployment on missing GitHub configuration
-      env:
-        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-        K8S_CONFIG_JSON: ${{ vars.K8S_CONFIG_JSON }}
-        K8S_SECRETS_JSON: ${{ secrets.K8S_SECRETS_JSON }}
-        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        WORKER_CONFIG_JSON: ${{ vars.WORKER_CONFIG_JSON }}
-      run: |
-        set -euo pipefail
-        task_dir=$(mktemp -d)
-        trap 'rm -rf "$task_dir"' EXIT
-        python3 deploy/ci/runtime.py prepare "$task_dir"
-        python3 deploy/ci/worker_config.py "$task_dir/worker.json"
-        python3 - "$task_dir/runtime.json" "$task_dir/worker.json" <<'PY'
-        import json,sys
-        r=json.load(open(sys.argv[1]))["config"]
-        w=json.load(open(sys.argv[2]))
-        assert json.load(open(sys.argv[1]))["secrets"]["CLOUDFLARE_ACCOUNT_ID"] == __import__("os").environ["CLOUDFLARE_ACCOUNT_ID"], "Email and Worker accounts differ"
-        pattern=w["routes"][0]["pattern"].removesuffix("/*")
-        assert r["APP_BASE_URL"] == "https://"+pattern, "Worker and Accounts public URL differ"
-        assert r["PUBLIC_API_ORIGIN"] == w["vars"]["API_ORIGIN"], "Worker API origin differs"
-        PY
   backend:
     runs-on: ubuntu-latest
     services:
@@ -131,88 +103,6 @@ jobs:
         echo "API did not become ready"
         cat /tmp/knotree-api.log
         exit 1
-  publish-api-image:
-    name: Publish API image by digest
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
-    needs:
-    - backend
-    - frontend
-    - e2e
-    - deploy-preflight
-    - deploy-contract-tests
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-    - uses: actions/checkout@v4
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-    - name: Log in to GHCR
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    - name: Build and publish
-      id: build
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        file: docker/Dockerfile
-        push: true
-        tags: ghcr.io/vantanminh/knotree-auth:commit-${{ github.sha }}
-        labels: |
-          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          org.opencontainers.image.revision=${{ github.sha }}
-        cache-from: type=gha,scope=knotree-accounts-api
-        cache-to: type=gha,mode=max,scope=knotree-accounts-api
-        provenance: true
-        sbom: true
-    - name: Record immutable image reference
-      env:
-        IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
-        IMAGE_TAG: commit-${{ github.sha }}
-      run: |
-        echo "Published ghcr.io/vantanminh/knotree-auth:$IMAGE_TAG" >> "$GITHUB_STEP_SUMMARY"
-        echo "Digest: $IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
-  deploy-api:
-    name: Deploy immutable API image to k3s
-    needs: publish-api-image
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 80
-    concurrency:
-      group: knotree-auth-production-runtime
-      cancel-in-progress: false
-    permissions:
-      contents: read
-    steps:
-    - uses: actions/checkout@v4
-    - name: Apply validated GitHub runtime and deploy CI images
-      env:
-        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-        K8S_CONFIG_JSON: ${{ vars.K8S_CONFIG_JSON }}
-        K8S_SECRETS_JSON: ${{ secrets.K8S_SECRETS_JSON }}
-        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-        SSH_HOST: ${{ secrets.SSH_HOST }}
-        SSH_USER: ${{ secrets.SSH_USER }}
-        SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
-        IMAGE_DIGEST: ${{ needs.publish-api-image.outputs.digest }}
-      run: bash deploy/ci/deliver.sh "ghcr.io/vantanminh/knotree-auth@$IMAGE_DIGEST"
-  deploy-worker:
-    needs:
-    - deploy-api
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/worker-deploy.yml
-    secrets: inherit
-  deploy-contract-tests:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - run: python3 -m unittest discover -s deploy/ci -p "test_*.py"
 'on':
   push: null
   pull_request: null
