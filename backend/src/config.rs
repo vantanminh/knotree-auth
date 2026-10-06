@@ -3,7 +3,9 @@ use crate::security::crypto::TotpKeyring;
 use crate::security::password::{hash_password, ArgonSettings};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding};
+use rsa::pkcs8::{
+    DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding,
+};
 use rsa::traits::PublicKeyParts;
 use rsa::RsaPrivateKey;
 use std::env;
@@ -354,7 +356,8 @@ fn load_jwt_keys(environment: Environment) -> AppResult<(Vec<JwtKey>, String)> {
 }
 
 fn jwt_key_from_private(kid: &str, pem: &str) -> AppResult<JwtKey> {
-    let private = <RsaPrivateKey as DecodePrivateKey>::from_pkcs8_pem(pem).map_err(AppError::internal)?;
+    let private =
+        <RsaPrivateKey as DecodePrivateKey>::from_pkcs8_pem(pem).map_err(AppError::internal)?;
     let private: RsaPrivateKey = private;
     let public = rsa::RsaPublicKey::from(&private);
     let public_pem = public
@@ -515,7 +518,10 @@ pub fn check_assignments(vars: &std::collections::HashMap<String, String>) -> Ve
     if !matches!(email_provider.as_str(), "outbox" | "cloudflare") {
         problems.push("EMAIL_PROVIDER must be outbox or cloudflare".into());
     }
-    if let Some(from) = vars.get("EMAIL_FROM").filter(|value| !value.trim().is_empty()) {
+    if let Some(from) = vars
+        .get("EMAIL_FROM")
+        .filter(|value| !value.trim().is_empty())
+    {
         if !from.contains('@') || from.contains(char::is_whitespace) {
             problems.push("EMAIL_FROM must be an email address".into());
         }
@@ -526,14 +532,12 @@ pub fn check_assignments(vars: &std::collections::HashMap<String, String>) -> Ve
             .map(|value| value.trim())
             .filter(|value| !value.is_empty())
         {
-            Some(id)
-                if id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit()) => {}
-            Some(_) => problems.push(
-                "CLOUDFLARE_ACCOUNT_ID must be a 32-character hexadecimal ID".into(),
-            ),
-            None if production => problems.push(
-                "CLOUDFLARE_ACCOUNT_ID is required when EMAIL_PROVIDER=cloudflare".into(),
-            ),
+            Some(id) if id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit()) => {}
+            Some(_) => {
+                problems.push("CLOUDFLARE_ACCOUNT_ID must be a 32-character hexadecimal ID".into())
+            }
+            None if production => problems
+                .push("CLOUDFLARE_ACCOUNT_ID is required when EMAIL_PROVIDER=cloudflare".into()),
             None => {}
         }
         if production
@@ -543,8 +547,9 @@ pub fn check_assignments(vars: &std::collections::HashMap<String, String>) -> Ve
                 .filter(|value| !value.is_empty())
                 .is_none()
         {
-            problems
-                .push("CLOUDFLARE_EMAIL_API_TOKEN is required when EMAIL_PROVIDER=cloudflare".into());
+            problems.push(
+                "CLOUDFLARE_EMAIL_API_TOKEN is required when EMAIL_PROVIDER=cloudflare".into(),
+            );
         }
     }
 
@@ -553,7 +558,7 @@ pub fn check_assignments(vars: &std::collections::HashMap<String, String>) -> Ve
         .filter(|value| !value.is_empty())
     {
         Some(value) => match value.parse::<u32>() {
-                Ok(memory) if production && memory < 19_456 => {
+            Ok(memory) if production && memory < 19_456 => {
                 problems.push("ARGON2_MEMORY_KIB must be at least 19456 in production".into());
             }
             Ok(_) => {}
@@ -588,10 +593,7 @@ pub fn check_assignments(vars: &std::collections::HashMap<String, String>) -> Ve
     {
         Some(spec) => {
             if let Err(err) = TotpKeyring::from_spec(spec, active_totp_version) {
-                problems.push(format!(
-                    "TOTP_ENCRYPTION_KEYS: {}",
-                    err.startup_message()
-                ));
+                problems.push(format!("TOTP_ENCRYPTION_KEYS: {}", err.startup_message()));
             }
         }
         None if production => problems.push("TOTP_ENCRYPTION_KEYS is required".into()),
@@ -615,8 +617,15 @@ pub fn check_assignments(vars: &std::collections::HashMap<String, String>) -> Ve
         check_public_pem("JWT_PREVIOUS_PUBLIC_KEY_PEM", pem, &mut problems);
     }
 
-    if let Some(origins) = vars.get("CORS_ORIGINS").filter(|value| !value.trim().is_empty()) {
-        for origin in origins.split(',').map(str::trim).filter(|origin| !origin.is_empty()) {
+    if let Some(origins) = vars
+        .get("CORS_ORIGINS")
+        .filter(|value| !value.trim().is_empty())
+    {
+        for origin in origins
+            .split(',')
+            .map(str::trim)
+            .filter(|origin| !origin.is_empty())
+        {
             let parsed = url::Url::parse(origin).ok();
             if parsed
                 .as_ref()
@@ -650,7 +659,9 @@ pub fn check_assignments(vars: &std::collections::HashMap<String, String>) -> Ve
             .map(|value| !value.trim().is_empty())
             .unwrap_or(false);
         if has_left != has_right {
-            problems.push(format!("{left} and {right} must both be set or both be empty"));
+            problems.push(format!(
+                "{left} and {right} must both be set or both be empty"
+            ));
         }
     }
     for name in [
