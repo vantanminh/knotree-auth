@@ -126,8 +126,20 @@ async fn seed_super_admin(state: &AppState, email: &str, password: &str) -> AppR
                     "SUPER_ADMIN_PASSWORD does not meet the password policy: {err}"
                 ))
             })?;
-            let username = super::identity::normalize_username(&state.config.super_admin_username)
-                .map_err(|_| AppError::internal("SUPER_ADMIN_USERNAME is not a valid username"))?;
+            // Reserved names such as `admin` are blocked for sign-up but are
+            // exactly what the system account should be allowed to use.
+            let username =
+                match super::identity::normalize_username(&state.config.super_admin_username) {
+                    Ok(username) => username,
+                    Err(AppError::Validation("That username is reserved.")) => {
+                        state.config.super_admin_username.trim().to_lowercase()
+                    }
+                    Err(_) => {
+                        return Err(AppError::internal(
+                            "SUPER_ADMIN_USERNAME is not a valid username",
+                        ))
+                    }
+                };
             super::identity::claim_username(&mut tx, &username, None)
                 .await
                 .map_err(|_| AppError::internal("SUPER_ADMIN_USERNAME is already taken"))?;
