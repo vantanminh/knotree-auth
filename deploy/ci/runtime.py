@@ -186,17 +186,10 @@ def totp_errors(spec, active):
             errors.append("TOTP_ENCRYPTION_KEYS has an invalid version")
             continue
         try:
-            decoded = base64.b64decode(material, validate=True)
+            decoded = decode_b64(material)
         except ValueError:
-            if "=" in material:
-                errors.append("TOTP_ENCRYPTION_KEYS is not base64")
-                continue
-            padded = material + "=" * (-len(material) % 4)
-            try:
-                decoded = base64.b64decode(padded, altchars=b"-_", validate=True)
-            except ValueError:
-                errors.append("TOTP_ENCRYPTION_KEYS is not base64")
-                continue
+            errors.append("TOTP_ENCRYPTION_KEYS is not base64")
+            continue
         if len(decoded) != 32:
             errors.append("TOTP_ENCRYPTION_KEYS must encode 32 bytes")
             continue
@@ -206,10 +199,34 @@ def totp_errors(spec, active):
     return errors
 
 
+def decode_b64(material):
+    cleaned = material.strip().strip('"').strip("'").replace(" ", "+")
+    cleaned = "".join(cleaned.split())
+    padded = cleaned + "=" * (-len(cleaned) % 4)
+    return base64.b64decode(padded, altchars=b"-_", validate=True)
+
+
 def pem_errors(name, value, label):
     if "\x00" in value:
         return [name + " contains a NUL byte"]
-    pem = value.replace("\\n", "\n").strip()
+    text = value.strip().strip('"').strip("'")
+    if "BEGIN" not in text:
+        try:
+            text = decode_b64(text).decode()
+        except (ValueError, UnicodeError):
+            return [name + " is not a PEM " + (label or "block")]
+    pem = text.replace("\\n", "\n").replace("\r", "").strip()
+    begin = pem.find("-----BEGIN ")
+    if begin != -1:
+        after = begin + len("-----BEGIN ")
+        label_end = pem.find("-----", after)
+        if label_end != -1:
+            header_end = label_end + 5
+            end = pem.find("-----END ", header_end)
+            if end == -1:
+                pem = pem[:header_end] + pem[header_end:].replace(" ", "+")
+            else:
+                pem = pem[:header_end] + pem[header_end:end].replace(" ", "+") + pem[end:]
     if label:
         begin = "-----BEGIN " + label + "-----"
         end = "-----END " + label + "-----"

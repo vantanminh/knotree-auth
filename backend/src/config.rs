@@ -315,7 +315,7 @@ fn load_jwt_keys(environment: Environment) -> AppResult<(Vec<JwtKey>, String)> {
     let active_kid = env_or("JWT_KEY_ID", "knotree-1");
     let private_pem = if let Ok(pem) = env::var("JWT_PRIVATE_KEY_PEM") {
         if !pem.trim().is_empty() {
-            Some(pem.replace("\\n", "\n"))
+            Some(pem_text(&pem))
         } else {
             None
         }
@@ -349,7 +349,7 @@ fn load_jwt_keys(environment: Environment) -> AppResult<(Vec<JwtKey>, String)> {
     if let Ok(previous) = env::var("JWT_PREVIOUS_PUBLIC_KEY_PEM") {
         if !previous.trim().is_empty() {
             let kid = env_or("JWT_PREVIOUS_KEY_ID", "knotree-0");
-            keys.push(jwt_key_from_public(&kid, &previous.replace("\\n", "\n"))?);
+            keys.push(jwt_key_from_public(&kid, &pem_text(&previous))?);
         }
     }
     Ok((keys, active_kid))
@@ -685,12 +685,53 @@ pub fn check_assignments(vars: &std::collections::HashMap<String, String>) -> Ve
     problems
 }
 
+fn restore_pem_plus(pem: &str) -> String {
+    let Some(header_start) = pem.find("-----BEGIN ") else {
+        return pem.to_string();
+    };
+    let after_label = header_start + "-----BEGIN ".len();
+    let Some(label_rel) = pem[after_label..].find("-----") else {
+        return pem.to_string();
+    };
+    let header_end = after_label + label_rel + 5;
+    let Some(end_rel) = pem[header_end..].find("-----END ") else {
+        return format!(
+            "{}{}",
+            &pem[..header_end],
+            pem[header_end..].replace(' ', "+")
+        );
+    };
+    let end = header_end + end_rel;
+    format!(
+        "{}{}{}",
+        &pem[..header_end],
+        pem[header_end..end].replace(' ', "+"),
+        &pem[end..]
+    )
+}
+
+fn pem_text(raw: &str) -> String {
+    let trimmed = raw.trim().trim_matches(|c| c == '"' || c == '\'');
+    let unescaped = trimmed.replace("\\n", "\n").replace('\r', "");
+    if unescaped.contains("BEGIN") {
+        return restore_pem_plus(&unescaped);
+    }
+    if let Ok(bytes) = crate::security::crypto::decode_base64_flexible(trimmed) {
+        if let Ok(text) = String::from_utf8(bytes) {
+            if text.contains("BEGIN") {
+                return text;
+            }
+        }
+    }
+    unescaped
+}
+
 fn check_private_pem(name: &str, raw: &str, problems: &mut Vec<String>) {
     if raw.contains('\0') {
         problems.push(format!("{name} contains a NUL byte"));
         return;
     }
-    let pem = raw.replace("\\n", "\n");
+    let pem = pem_text(raw);
     if <RsaPrivateKey as DecodePrivateKey>::from_pkcs8_pem(&pem).is_err() {
         problems.push(format!("{name} is not a PKCS#8 private key"));
     }
@@ -701,7 +742,7 @@ fn check_public_pem(name: &str, raw: &str, problems: &mut Vec<String>) {
         problems.push(format!("{name} contains a NUL byte"));
         return;
     }
-    let pem = raw.replace("\\n", "\n");
+    let pem = pem_text(raw);
     if <rsa::RsaPublicKey as DecodePublicKey>::from_public_key_pem(&pem).is_err() {
         problems.push(format!("{name} is not a PKCS#8 public key"));
     }
@@ -786,7 +827,8 @@ mod tests {
 
     #[test]
     fn production_assignments_pass() {
-        assert!(check_assignments(&production_vars()).is_empty());
+        let problems = check_assignments(&production_vars());
+        assert!(problems.is_empty(), "{problems:?}");
     }
 
     #[test]
