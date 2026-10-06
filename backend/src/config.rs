@@ -553,18 +553,17 @@ pub fn check_assignments(vars: &std::collections::HashMap<String, String>) -> Ve
         }
     }
 
-    match vars
+    if let Some(value) = vars
         .get("ARGON2_MEMORY_KIB")
         .filter(|value| !value.is_empty())
     {
-        Some(value) => match value.parse::<u32>() {
+        match value.parse::<u32>() {
             Ok(memory) if production && memory < 19_456 => {
                 problems.push("ARGON2_MEMORY_KIB must be at least 19456 in production".into());
             }
             Ok(_) => {}
             Err(_) => problems.push("ARGON2_MEMORY_KIB must be an integer".into()),
-        },
-        None => {}
+        }
     }
     for name in ["ARGON2_ITERATIONS", "ARGON2_PARALLELISM"] {
         if let Some(value) = vars.get(name).filter(|value| !value.is_empty()) {
@@ -742,6 +741,15 @@ fn env_u32(name: &str, default: u32) -> AppResult<u32> {
     }
 }
 
+fn env_i64(name: &str, default: i64) -> AppResult<i64> {
+    match env::var(name) {
+        Ok(value) if !value.is_empty() => value
+            .parse()
+            .map_err(|_| AppError::internal(format!("{name} must be an integer"))),
+        _ => Ok(default),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -794,14 +802,5 @@ mod tests {
         assert!(joined.contains("TOTP_ENCRYPTION_KEYS"), "{joined}");
         assert!(joined.contains("NUL byte"), "{joined}");
         assert!(joined.contains("CLOUDFLARE_ACCOUNT_ID"), "{joined}");
-    }
-}
-
-fn env_i64(name: &str, default: i64) -> AppResult<i64> {
-    match env::var(name) {
-        Ok(value) if !value.is_empty() => value
-            .parse()
-            .map_err(|_| AppError::internal(format!("{name} must be an integer"))),
-        _ => Ok(default),
     }
 }
