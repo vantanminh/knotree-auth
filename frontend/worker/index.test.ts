@@ -4,6 +4,33 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("serves the consent screen from the UI and proxies authorize", async () => {
+  const upstream = vi.fn(async (input: Request | URL) => {
+    const request = input instanceof Request ? input : new Request(input);
+    expect(request.url).toBe("https://accounts-api.knotree.com/oauth/authorize?client_id=knotree-lms");
+    return new Response("api", { status: 302 });
+  });
+  vi.stubGlobal("fetch", upstream);
+  const assets = vi.fn(async () => new Response("<html>consent</html>", { status: 200 }));
+  const env = {
+    ASSETS: { fetch: assets },
+    API_ORIGIN: "https://accounts-api.knotree.com",
+  };
+
+  const consent = await worker.fetch(new Request("https://accounts.knotree.com/oauth/consent?request=abc"), env);
+  expect(assets).toHaveBeenCalledOnce();
+  expect(upstream).not.toHaveBeenCalled();
+  expect(consent.status).toBe(200);
+  expect(await consent.text()).toContain("consent");
+
+  const authorize = await worker.fetch(
+    new Request("https://accounts.knotree.com/oauth/authorize?client_id=knotree-lms"),
+    env,
+  );
+  expect(authorize.status).toBe(302);
+  expect(upstream).toHaveBeenCalledOnce();
+});
+
 it("forwards the session cookie and does not cache API responses", async () => {
   const upstream = vi.fn(async (input: Request | URL, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(input, init);

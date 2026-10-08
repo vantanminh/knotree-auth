@@ -3,12 +3,25 @@ interface Env {
   API_ORIGIN?: string;
 }
 
-const PROXY_PREFIXES = ["/api/", "/oauth/", "/.well-known/", "/health", "/ready"];
+const PROXY_PREFIXES = ["/api/", "/.well-known/", "/health", "/ready"];
+// Protocol endpoints. /oauth/consent and /oauth/error are Accounts UI screens.
+const OAUTH_API_PATHS = new Set([
+  "/oauth/authorize",
+  "/oauth/token",
+  "/oauth/revoke",
+  "/oauth/introspect",
+  "/oauth/userinfo",
+]);
+
+function proxiesToApi(pathname: string): boolean {
+  if (OAUTH_API_PATHS.has(pathname)) return true;
+  return PROXY_PREFIXES.some((prefix) => pathname === prefix.replace(/\/$/, "") || pathname.startsWith(prefix));
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (PROXY_PREFIXES.some((prefix) => url.pathname === prefix.replace(/\/$/, "") || url.pathname.startsWith(prefix))) {
+    if (proxiesToApi(url.pathname)) {
       return proxy(request, url, env);
     }
     const asset = await env.ASSETS.fetch(request);
