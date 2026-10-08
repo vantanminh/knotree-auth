@@ -8,7 +8,13 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": "http://127.0.0.1:8080",
-      "/oauth": "http://127.0.0.1:8080",
+      "/oauth": {
+        target: "http://127.0.0.1:8080",
+        bypass(req) {
+          const path = req.url?.split("?")[0] ?? "";
+          if (path === "/oauth/consent" || path === "/oauth/error") return "/index.html";
+        },
+      },
       "/.well-known": "http://127.0.0.1:8080",
       "/health": "http://127.0.0.1:8080",
       "/ready": "http://127.0.0.1:8080",

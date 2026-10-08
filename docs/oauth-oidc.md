@@ -14,6 +14,6 @@ Endpoints:
 
 `redirect_uri` must match a registered URI exactly. `state` is required and returned unchanged. Public clients must omit `client_secret`. Confidential and service clients authenticate with HTTP Basic or form fields. Introspection returns `active: false` for tokens issued to a different client.
 
-First-party clients skip the consent screen. Third-party clients stop on `/oauth/consent`. The consent record is revalidated before a code is issued.
+First-party clients skip the consent screen. Third-party clients stop on `/oauth/consent`. That path, and `/oauth/error`, are Accounts UI screens. The edge serves them from the app. It forwards only `/oauth/authorize`, `/oauth/token`, `/oauth/revoke`, `/oauth/introspect`, and `/oauth/userinfo` to the API. The consent record is revalidated before a code is issued.
 
 ID tokens are RS256 and include `iss`, `sub`, `aud`, `exp`, `iat`, `auth_time`, `nonce`, `amr`, and email or name claims when those scopes were granted. The `profile` scope also adds `preferred_username`, the account's username. `email` is always the primary email. Usernames and emails can change, so relying services must key users on `sub` only and refresh the other claims at every sign-in. Access tokens stay opaque.

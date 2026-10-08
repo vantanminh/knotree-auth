@@ -10,7 +10,25 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
 
-    # Same routes the Cloudflare Worker forwards to the Rust API.
+    # Consent and error are Accounts UI screens. Exact matches win over the API regex below.
+    location = /oauth/consent {
+        add_header Cache-Control "no-store" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header X-Frame-Options "DENY" always;
+        try_files /index.html =404;
+    }
+    location = /oauth/error {
+        add_header Cache-Control "no-store" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header X-Frame-Options "DENY" always;
+        try_files /index.html =404;
+    }
+
+    # Same protocol routes the Cloudflare Worker forwards to the Rust API.
     location ~ ^/(api|oauth|\.well-known)/ {
         proxy_pass ${API_ORIGIN};
         proxy_http_version 1.1;
